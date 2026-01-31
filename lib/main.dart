@@ -964,153 +964,160 @@ class _AddEventPageState extends State<AddEventPage> {
       body: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 600),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 1. 类型选择
-              const Text(
-                '事项类型',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: EventType.values.map((type) {
-                  final isSelected = _selectedType == type;
-                  return GestureDetector(
-                    onTap: () => setState(() => _selectedType = type),
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: isSelected ? type.color : Colors.white,
-                            shape: BoxShape.circle,
-                            border: isSelected
-                                ? Border.all(color: kDarkText, width: 2)
-                                : null,
-                          ),
-                          child: Icon(type.icon, size: 28, color: kDarkText),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          type.label,
-                          style: TextStyle(
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                            color: kDarkText,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 32),
-
-              // 2. 时间选择
-              const Text(
-                '时间',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildTimeButton(
-                      icon: Icons.calendar_today,
-                      text: DateFormat('MM月dd日').format(_selectedDate),
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: _selectedDate,
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2030),
-                        );
-                        if (date != null) setState(() => _selectedDate = date);
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _buildTimeButton(
-                      icon: Icons.access_time,
-                      text: _selectedTime.format(context),
-                      onTap: () async {
-                        final time = await showTimePicker(
-                          context: context,
-                          initialTime: _selectedTime,
-                        );
-                        if (time != null) setState(() => _selectedTime = time);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-
-              // 2.5 提醒开关
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  '开启提醒',
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 1. 类型选择
+                const Text(
+                  '事项类型',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-                subtitle: Text(_enableReminder ? '到时间会发送通知提醒你' : '不提醒'),
-                value: _enableReminder,
-                activeColor: kPrimaryColor,
-                onChanged: (val) {
-                  setState(() {
-                    _enableReminder = val;
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // 3. 备注
-              const Text(
-                '备注 (可选)',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _noteController,
-                decoration: InputDecoration(
-                  hintText: '写点什么...',
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none,
-                  ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: EventType.values.map((type) {
+                    final isSelected = _selectedType == type;
+                    return GestureDetector(
+                      onTap: () => setState(() => _selectedType = type),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: isSelected ? type.color : Colors.white,
+                              shape: BoxShape.circle,
+                              border: isSelected
+                                  ? Border.all(color: kDarkText, width: 2)
+                                  : null,
+                            ),
+                            child: Icon(type.icon, size: 28, color: kDarkText),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            type.label,
+                            style: TextStyle(
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              color: kDarkText,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
                 ),
-                maxLines: 3,
-              ),
+                const SizedBox(height: 32),
 
-              const Spacer(),
-
-              // 4. 保存按钮
-              SizedBox(
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _saveEvent,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kPrimaryColor,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
+                // 2. 时间选择
+                const Text(
+                  '时间',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildTimeButton(
+                        icon: Icons.calendar_today,
+                        text: DateFormat('MM月dd日').format(_selectedDate),
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2030),
+                          );
+                          if (date != null)
+                            setState(() => _selectedDate = date);
+                        },
+                      ),
                     ),
-                    elevation: 0,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildTimeButton(
+                        icon: Icons.access_time,
+                        text: _selectedTime.format(context),
+                        onTap: () async {
+                          final time = await showTimePicker(
+                            context: context,
+                            initialTime: _selectedTime,
+                          );
+                          if (time != null)
+                            setState(() => _selectedTime = time);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 32),
+
+                // 2.5 提醒开关
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    '开启提醒',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                  child: const Text(
-                    '保 存',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  subtitle: Text(_enableReminder ? '到时间会发送通知提醒你' : '不提醒'),
+                  value: _enableReminder,
+                  activeColor: kPrimaryColor,
+                  onChanged: (val) {
+                    setState(() {
+                      _enableReminder = val;
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // 3. 备注
+                const Text(
+                  '备注 (可选)',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _noteController,
+                  decoration: InputDecoration(
+                    hintText: '写点什么...',
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  maxLines: 3,
+                ),
+
+                const SizedBox(height: 48),
+
+                // 4. 保存按钮
+                SizedBox(
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: _saveEvent,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kPrimaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      '保 存',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
