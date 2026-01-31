@@ -25,7 +25,11 @@ class CloudService {
     final key = prefs.getString(kSupabaseAnonKeyKey);
     final useCloud = prefs.getBool(kUseCloudKey) ?? false;
 
-    if (useCloud && url != null && url.isNotEmpty && key != null && key.isNotEmpty) {
+    if (useCloud &&
+        url != null &&
+        url.isNotEmpty &&
+        key != null &&
+        key.isNotEmpty) {
       try {
         await Supabase.initialize(url: url, anonKey: key);
         _client = Supabase.instance.client;
@@ -77,6 +81,10 @@ class _CloudSettingsPageState extends State<CloudSettingsPage> {
   final _keyController = TextEditingController();
   bool _useCloud = false;
 
+  // 从用户提供的连接字符串中提取的项目 ID
+  static const String _defaultProjectId = 'cgahmjsszehiwrdpfftp';
+  static const String _defaultUrl = 'https://$_defaultProjectId.supabase.co';
+
   @override
   void initState() {
     super.initState();
@@ -86,32 +94,50 @@ class _CloudSettingsPageState extends State<CloudSettingsPage> {
   Future<void> _loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _urlController.text = prefs.getString(CloudService.kSupabaseUrlKey) ?? '';
-      _keyController.text = prefs.getString(CloudService.kSupabaseAnonKeyKey) ?? '';
+      final savedUrl = prefs.getString(CloudService.kSupabaseUrlKey);
+      _urlController.text = (savedUrl != null && savedUrl.isNotEmpty)
+          ? savedUrl
+          : _defaultUrl; // 自动填充推断出的 URL
+
+      _keyController.text =
+          prefs.getString(CloudService.kSupabaseAnonKeyKey) ?? '';
       _useCloud = prefs.getBool(CloudService.kUseCloudKey) ?? false;
     });
+  }
+
+  Future<void> _openSupabaseSettings() async {
+    final Uri url = Uri.parse(
+      'https://supabase.com/dashboard/project/$_defaultProjectId/settings/api',
+    );
+    if (!await launchUrl(url)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('无法打开浏览器，请手动访问 Supabase 控制台')),
+        );
+      }
+    }
   }
 
   Future<void> _save() async {
     if (_useCloud) {
       if (_urlController.text.isEmpty || _keyController.text.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请填写完整的 URL 和 Key')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('请填写完整的 URL 和 Key')));
         return;
       }
       await CloudService.saveConfig(_urlController.text, _keyController.text);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('配置已保存，请重启 App 以生效')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('配置已保存，请重启 App 以生效')));
       }
     } else {
       await CloudService.disableCloud();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已切换回本地模式，请重启 App')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('已切换回本地模式，请重启 App')));
       }
     }
   }
@@ -150,18 +176,30 @@ class _CloudSettingsPageState extends State<CloudSettingsPage> {
             const SizedBox(height: 16),
             TextField(
               controller: _keyController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Supabase Anon Key',
                 hintText: 'eyJxh...',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.help_outline),
+                  tooltip: '去获取 Key',
+                  onPressed: _openSupabaseSettings,
+                ),
               ),
               maxLines: 3,
             ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _save,
-              child: const Text('保存并应用'),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: _openSupabaseSettings,
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('点击这里去 Supabase 复制 Anon Key'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.blue,
+                alignment: Alignment.centerLeft,
+              ),
             ),
+            const SizedBox(height: 24),
+            ElevatedButton(onPressed: _save, child: const Text('保存并应用')),
             const SizedBox(height: 32),
             const Divider(),
             const Text(
