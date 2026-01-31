@@ -942,59 +942,133 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// 删除事项
+  Future<void> _deleteEvent(CareEvent event) async {
+    // 1. 本地删除
+    final events = await StorageService.getEvents();
+    events.removeWhere((e) => e.id == event.id);
+    await StorageService.saveEvents(events);
+
+    // 2. 云端删除
+    if (CloudService.isEnabled) {
+      try {
+        await CloudService.client!.from('events').delete().eq('id', event.id);
+
+        // 记录日志
+        await CloudService.logActivity(
+          '删除事项',
+          '删除了 ${event.type.label} (${DateFormat('MM-dd HH:mm').format(event.dateTime)})',
+        );
+      } catch (e) {
+        debugPrint('Cloud delete event error: $e');
+      }
+    }
+
+    _loadData();
+  }
+
   /// 事项卡片
   Widget _buildEventCard(CareEvent event) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: event.isDone
-            ? Colors.white.withValues(alpha: 0.6)
-            : Colors.white,
-        borderRadius: BorderRadius.circular(24),
+    return Dismissible(
+      key: Key(event.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.redAccent,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        child: const Icon(Icons.delete, color: Colors.white, size: 32),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: event.type.color.withValues(alpha: 0.5),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(event.type.icon, color: kDarkText, size: 24),
-        ),
-        title: Text(
-          event.type.label,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: kDarkText,
-            decoration: event.isDone ? TextDecoration.lineThrough : null,
-          ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              DateFormat('HH:mm').format(event.dateTime),
-              style: TextStyle(color: kDarkText.withValues(alpha: 0.5)),
-            ),
-            if (event.note.isNotEmpty)
-              Text(
-                event.note,
-                style: TextStyle(color: kDarkText.withValues(alpha: 0.8)),
+      confirmDismiss: (direction) async {
+        return await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('确认删除?'),
+            content: const Text('删除后无法恢复。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
               ),
-          ],
-        ),
-        trailing: Transform.scale(
-          scale: 1.2,
-          child: Checkbox(
-            value: event.isDone,
-            activeColor: kPrimaryColor,
-            shape: const CircleBorder(),
-            onChanged: (val) => _toggleEvent(event),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('删除', style: TextStyle(color: Colors.red)),
+              ),
+            ],
           ),
+        );
+      },
+      onDismissed: (direction) => _deleteEvent(event),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: event.isDone
+              ? Colors.white.withValues(alpha: 0.6)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(24),
         ),
-        onTap: () => _toggleEvent(event),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 8,
+          ),
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: event.type.color.withValues(alpha: 0.5),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(event.type.icon, color: kDarkText, size: 24),
+          ),
+          title: Text(
+            event.type.label,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: kDarkText,
+              decoration: event.isDone ? TextDecoration.lineThrough : null,
+            ),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                DateFormat('HH:mm').format(event.dateTime),
+                style: TextStyle(color: kDarkText.withValues(alpha: 0.5)),
+              ),
+              if (event.note.isNotEmpty)
+                Text(
+                  event.note,
+                  style: TextStyle(color: kDarkText.withValues(alpha: 0.8)),
+                ),
+            ],
+          ),
+          trailing: Transform.scale(
+            scale: 1.2,
+            child: Checkbox(
+              value: event.isDone,
+              activeColor: kPrimaryColor,
+              shape: const CircleBorder(),
+              onChanged: (val) => _toggleEvent(event),
+            ),
+          ),
+          onTap: () async {
+            // 点击进入编辑页
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AddEventPage(
+                  petId: event.petId,
+                  eventToEdit: event, // 传入已有事件进行编辑
+                ),
+              ),
+            );
+            _loadData();
+          },
+        ),
       ),
     );
   }
@@ -1006,7 +1080,9 @@ class _HomePageState extends State<HomePage> {
 
 class AddEventPage extends StatefulWidget {
   final String petId;
-  const AddEventPage({super.key, required this.petId});
+  final CareEvent? eventToEdit; // 新增：用于编辑
+
+  const AddEventPage({super.key, required this.petId, this.eventToEdit});
 
   @override
   State<AddEventPage> createState() => _AddEventPageState();
@@ -1017,7 +1093,21 @@ class _AddEventPageState extends State<AddEventPage> {
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   final TextEditingController _noteController = TextEditingController();
-  bool _enableReminder = false; // 新增：是否开启提醒
+  bool _enableReminder = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.eventToEdit != null) {
+      // 初始化编辑数据
+      final e = widget.eventToEdit!;
+      _selectedType = e.type;
+      _selectedDate = e.dateTime;
+      _selectedTime = TimeOfDay.fromDateTime(e.dateTime);
+      _noteController.text = e.note;
+      // 编辑时不自动开启提醒，或者根据业务逻辑决定
+    }
+  }
 
   Future<void> _saveEvent() async {
     final dateTime = DateTime(
@@ -1028,31 +1118,60 @@ class _AddEventPageState extends State<AddEventPage> {
       _selectedTime.minute,
     );
 
-    final eventId = DateTime.now().millisecondsSinceEpoch.toString();
-    final newEvent = CareEvent(
-      id: eventId,
-      petId: widget.petId,
-      type: _selectedType,
-      dateTime: dateTime,
-      note: _noteController.text,
-      createdBy: CloudService.currentUserEmail, // 记录创建者
-    );
-
-    await StorageService.addEvent(newEvent);
-
-    // 设置通知
-    if (_enableReminder) {
-      // 使用 eventId 的 hash code 作为通知 ID (简单处理，可能有冲突风险，但在demo中可接受)
-      // 或者解析 eventId 如果它是数字。这里 id 是 string timestamp。
-      // 取后9位转int
-      final notificationId =
-          int.tryParse(eventId.substring(eventId.length - 9)) ?? 0;
-      await NotificationService.scheduleNotification(
-        id: notificationId,
-        title: '该给毛孩子${_selectedType.label}啦！',
-        body: '时间到了：${DateFormat('HH:mm').format(dateTime)}',
-        scheduledTime: dateTime,
+    if (widget.eventToEdit != null) {
+      // Update existing
+      final updatedEvent = CareEvent(
+        id: widget.eventToEdit!.id,
+        petId: widget.petId,
+        type: _selectedType,
+        dateTime: dateTime,
+        note: _noteController.text,
+        isDone: widget.eventToEdit!.isDone,
+        createdBy: widget.eventToEdit!.createdBy,
       );
+
+      await StorageService.updateEvent(updatedEvent);
+
+      // 更新提醒
+      if (_enableReminder) {
+        final notificationId =
+            int.tryParse(
+              widget.eventToEdit!.id.substring(
+                widget.eventToEdit!.id.length - 9,
+              ),
+            ) ??
+            0;
+        await NotificationService.scheduleNotification(
+          id: notificationId,
+          title: '该给毛孩子${_selectedType.label}啦！',
+          body: '时间到了：${DateFormat('HH:mm').format(dateTime)}',
+          scheduledTime: dateTime,
+        );
+      }
+    } else {
+      // Create new
+      final eventId = DateTime.now().millisecondsSinceEpoch.toString();
+      final newEvent = CareEvent(
+        id: eventId,
+        petId: widget.petId,
+        type: _selectedType,
+        dateTime: dateTime,
+        note: _noteController.text,
+        createdBy: CloudService.currentUserEmail,
+      );
+
+      await StorageService.addEvent(newEvent);
+
+      if (_enableReminder) {
+        final notificationId =
+            int.tryParse(eventId.substring(eventId.length - 9)) ?? 0;
+        await NotificationService.scheduleNotification(
+          id: notificationId,
+          title: '该给毛孩子${_selectedType.label}啦！',
+          body: '时间到了：${DateFormat('HH:mm').format(dateTime)}',
+          scheduledTime: dateTime,
+        );
+      }
     }
 
     if (mounted) Navigator.pop(context);
@@ -1061,7 +1180,7 @@ class _AddEventPageState extends State<AddEventPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('记一笔')),
+      appBar: AppBar(title: Text(widget.eventToEdit != null ? '编辑事项' : '记一笔')),
       body: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 600),
