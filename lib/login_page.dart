@@ -58,8 +58,10 @@ class _LoginPageState extends State<LoginPage> {
         } else if (message.contains('Invalid login credentials')) {
           message = '邮箱或密码错误';
         } else if (message.contains('User already registered')) {
-          message = '该邮箱已被注册';
-        }
+           message = '该邮箱已被注册';
+         } else if (message.contains('Error sending confirmation email')) {
+           message = '发送验证邮件失败，请检查服务器配置或稍后再试';
+         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message), backgroundColor: Colors.red),
         );
