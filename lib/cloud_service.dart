@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -66,6 +67,82 @@ class CloudService {
     _isInitialized = false;
     _client = null;
   }
+  // --- 家庭/群组与日志功能 ---
+
+  /// 获取当前用户邮箱
+  static String get currentUserEmail {
+    return _client?.auth.currentUser?.email ?? '本地用户';
+  }
+
+  /// 获取当前用户的 Family ID (这里简单使用 user_id，或者从 user_metadata 获取)
+  /// 为了实现“加入”，我们需要将 family_id 存储在 user_metadata 中
+  static String get currentFamilyId {
+    if (_client == null) return 'local';
+    final user = _client!.auth.currentUser;
+    if (user == null) return 'local';
+    // 优先从 metadata 获取，如果没有，默认为自己的 ID
+    return user.userMetadata?['family_id'] ?? user.id;
+  }
+
+  /// 加入家庭 (设置 family_id)
+  static Future<void> joinFamily(String familyId) async {
+    if (_client == null) return;
+    try {
+      final user = _client!.auth.currentUser;
+      if (user == null) return;
+
+      // 更新 user metadata
+      await _client!.auth.updateUser(
+        UserAttributes(data: {'family_id': familyId}),
+      );
+      debugPrint('Joined family: $familyId');
+    } catch (e) {
+      debugPrint('Join family error: $e');
+      rethrow;
+    }
+  }
+
+  /// 退出家庭 (重置为自己的 ID)
+  static Future<void> leaveFamily() async {
+    if (_client == null) return;
+    final user = _client!.auth.currentUser;
+    if (user == null) return;
+    await joinFamily(user.id);
+  }
+
+  /// 记录活动日志
+  static Future<void> logActivity(String action, String details) async {
+    if (!isEnabled) return;
+    try {
+      await _client!.from('activity_logs').insert({
+        'user_id': _client!.auth.currentUser!.id,
+        'user_email': currentUserEmail,
+        'family_id': currentFamilyId,
+        'action': action,
+        'details': details,
+      });
+    } catch (e) {
+      debugPrint('Log activity error: $e');
+      // 日志记录失败不应阻断主流程，吞掉错误
+    }
+  }
+
+  /// 获取活动日志
+  static Future<List<Map<String, dynamic>>> getActivityLogs() async {
+    if (!isEnabled) return [];
+    try {
+      final response = await _client!
+          .from('activity_logs')
+          .select()
+          .eq('family_id', currentFamilyId) // 只看当前家庭的日志
+          .order('created_at', ascending: false)
+          .limit(50);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('Get logs error: $e');
+      return [];
+    }
+  }
 }
 
 /// 云端设置页面
@@ -79,6 +156,7 @@ class CloudSettingsPage extends StatefulWidget {
 class _CloudSettingsPageState extends State<CloudSettingsPage> {
   final _urlController = TextEditingController();
   final _keyController = TextEditingController();
+  final _familyIdController = TextEditingController(); // 加入家庭输入框
   bool _useCloud = false;
 
   // 从用户提供的连接字符串中提取的项目 ID
@@ -114,6 +192,24 @@ class _CloudSettingsPageState extends State<CloudSettingsPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('无法打开浏览器，请手动访问 Supabase 控制台')),
         );
+      }
+    }
+  }
+
+  Future<void> _joinFamily() async {
+    if (_familyIdController.text.isEmpty) return;
+    try {
+      await CloudService.joinFamily(_familyIdController.text.trim());
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('成功加入家庭组！请重启 App 刷新数据')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('加入失败: $e')));
       }
     }
   }
@@ -202,6 +298,51 @@ class _CloudSettingsPageState extends State<CloudSettingsPage> {
             ElevatedButton(onPressed: _save, child: const Text('保存并应用')),
             const SizedBox(height: 32),
             const Divider(),
+            if (CloudService.isEnabled &&
+                CloudService.client?.auth.currentUser != null) ...[
+              const Text(
+                '家庭共享 (Family Sharing)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text('我的家庭 ID: ${CloudService.currentFamilyId}'),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () {
+                  Clipboard.setData(
+                    ClipboardData(text: CloudService.currentFamilyId),
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('ID 已复制，发给家人即可邀请加入')),
+                  );
+                },
+                icon: const Icon(Icons.copy),
+                label: const Text('复制我的家庭 ID'),
+              ),
+              const SizedBox(height: 16),
+              const Text('加入别人的家庭:'),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _familyIdController,
+                      decoration: const InputDecoration(
+                        hintText: '输入对方的家庭 ID',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _joinFamily,
+                    child: const Text('加入'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              const Divider(),
+            ],
             const Text(
               '如何获取配置？',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),

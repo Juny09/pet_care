@@ -9,6 +9,8 @@ import 'cloud_service.dart';
 import 'notification_service.dart';
 import 'login_page.dart';
 
+import 'activity_log_page.dart';
+
 // ---------------------------------------------------------------------------
 // 🎨 配色方案 (Color Palette)
 // ---------------------------------------------------------------------------
@@ -129,11 +131,12 @@ extension EventTypeExtension on EventType {
 /// 护理事项模型
 class CareEvent {
   final String id;
-  final String petId; // 关联的宠物ID
+  final String petId;
   final EventType type;
   final DateTime dateTime;
   final String note;
   bool isDone;
+  final String? createdBy; // 新增：记录创建者
 
   CareEvent({
     required this.id,
@@ -142,6 +145,7 @@ class CareEvent {
     required this.dateTime,
     this.note = '',
     this.isDone = false,
+    this.createdBy,
   });
 
   Map<String, dynamic> toJson() {
@@ -152,17 +156,19 @@ class CareEvent {
       'dateTime': dateTime.toIso8601String(),
       'note': note,
       'isDone': isDone,
+      'createdBy': createdBy,
     };
   }
 
   factory CareEvent.fromJson(Map<String, dynamic> json) {
     return CareEvent(
       id: json['id'],
-      petId: json['petId'] ?? '', // 兼容旧数据
+      petId: json['petId'] ?? '',
       type: EventType.values[json['type']],
       dateTime: DateTime.parse(json['dateTime']),
       note: json['note'] ?? '',
       isDone: json['isDone'] ?? false,
+      createdBy: json['createdBy'],
     );
   }
 }
@@ -187,6 +193,7 @@ class StorageService {
         final data = await CloudService.client!
             .from('pets')
             .select()
+            .eq('family_id', CloudService.currentFamilyId) // 过滤家庭
             .order('created_at', ascending: true);
         final List<dynamic> list = data;
         return list.map((e) => Pet.fromJson(e)).toList();
@@ -236,7 +243,9 @@ class StorageService {
       try {
         // 全量同步策略：upsert
         for (var pet in pets) {
-          await CloudService.client!.from('pets').upsert(pet.toJson());
+          final data = pet.toJson();
+          data['family_id'] = CloudService.currentFamilyId; // 关联到家庭
+          await CloudService.client!.from('pets').upsert(data);
         }
         // 注意：删除操作需要单独处理，这里暂不处理删除同步的复杂逻辑
       } catch (e) {
@@ -298,6 +307,7 @@ class StorageService {
         final data = await CloudService.client!
             .from('events')
             .select()
+            .eq('family_id', CloudService.currentFamilyId) // 过滤家庭
             .order('date_time', ascending: false);
         final List<dynamic> list = data;
         return list.map((e) {
@@ -317,6 +327,7 @@ class StorageService {
             dateTime: DateTime.parse(e['date_time'] ?? e['dateTime']),
             note: e['note'] ?? '',
             isDone: e['is_done'] ?? e['isDone'] ?? false,
+            createdBy: e['created_by'],
           );
         }).toList();
       } catch (e) {
@@ -372,8 +383,16 @@ class StorageService {
           'date_time': event.dateTime.toIso8601String(),
           'note': event.note,
           'is_done': event.isDone,
+          'created_by': event.createdBy,
+          'family_id': CloudService.currentFamilyId, // 关联到家庭
         };
         await CloudService.client!.from('events').insert(data);
+
+        // 记录日志
+        await CloudService.logActivity(
+          '添加事项',
+          '添加了 ${event.type.label} (${DateFormat('MM-dd HH:mm').format(event.dateTime)})',
+        );
       } catch (e) {
         debugPrint('Cloud add event error: $e');
       }
@@ -400,8 +419,16 @@ class StorageService {
           'date_time': updatedEvent.dateTime.toIso8601String(),
           'note': updatedEvent.note,
           'is_done': updatedEvent.isDone,
+          // created_by 不更新
+          'family_id': CloudService.currentFamilyId,
         };
         await CloudService.client!.from('events').upsert(data);
+
+        // 记录日志 (如果只是 toggle)
+        await CloudService.logActivity(
+          updatedEvent.isDone ? '完成事项' : '更新事项',
+          '更新了 ${updatedEvent.type.label}',
+        );
       } catch (e) {
         debugPrint('Cloud update event error: $e');
       }
@@ -601,6 +628,20 @@ class _HomePageState extends State<HomePage> {
             },
           )
           .subscribe();
+
+      // 监听活动日志变更
+      CloudService.client!
+          .channel('public:activity_logs')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'activity_logs',
+            callback: (payload) {
+              // 可以在这里加个红点提示，暂时只打印
+              debugPrint('New activity log');
+            },
+          )
+          .subscribe();
     }
   }
 
@@ -723,6 +764,18 @@ class _HomePageState extends State<HomePage> {
                     icon: const Icon(Icons.share),
                     tooltip: '分享今日日报',
                     onPressed: _shareDailySummary,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.history),
+                    tooltip: '活动日志',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ActivityLogPage(),
+                        ),
+                      );
+                    },
                   ),
                   IconButton(
                     icon: const Icon(Icons.cloud_sync),
@@ -982,6 +1035,7 @@ class _AddEventPageState extends State<AddEventPage> {
       type: _selectedType,
       dateTime: dateTime,
       note: _noteController.text,
+      createdBy: CloudService.currentUserEmail, // 记录创建者
     );
 
     await StorageService.addEvent(newEvent);
