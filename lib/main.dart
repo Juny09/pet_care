@@ -10,6 +10,7 @@ import 'notification_service.dart';
 import 'login_page.dart';
 
 import 'activity_log_page.dart';
+import 'growth_page.dart';
 
 // ---------------------------------------------------------------------------
 // 🎨 配色方案 (Color Palette)
@@ -173,6 +174,47 @@ class CareEvent {
   }
 }
 
+/// 成长记录模型
+class GrowthRecord {
+  final String id;
+  final String petId;
+  final DateTime date;
+  final double weight; // kg
+  final String? photoPath;
+  final String note;
+
+  GrowthRecord({
+    required this.id,
+    required this.petId,
+    required this.date,
+    required this.weight,
+    this.photoPath,
+    this.note = '',
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'petId': petId,
+      'date': date.toIso8601String(),
+      'weight': weight,
+      'photoPath': photoPath,
+      'note': note,
+    };
+  }
+
+  factory GrowthRecord.fromJson(Map<String, dynamic> json) {
+    return GrowthRecord(
+      id: json['id'],
+      petId: json['petId'],
+      date: DateTime.parse(json['date']),
+      weight: (json['weight'] as num).toDouble(),
+      photoPath: json['photoPath'],
+      note: json['note'] ?? '',
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 🛠️ 数据服务 (Storage Service)
 // ---------------------------------------------------------------------------
@@ -180,6 +222,7 @@ class CareEvent {
 class StorageService {
   static const String kPetsKey = 'pets_list';
   static const String kEventsKey = 'care_events';
+  static const String kGrowthKey = 'growth_records';
 
   // 旧数据 key (用于迁移)
   static const String kOldPetNameKey = 'pet_name';
@@ -435,6 +478,52 @@ class StorageService {
     }
   }
 
+  // --- 成长记录 (Growth Records) ---
+
+  /// 获取成长记录
+  static Future<List<GrowthRecord>> getGrowthRecords(String petId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? str = prefs.getString(kGrowthKey);
+    if (str == null) return [];
+
+    final List<dynamic> list = jsonDecode(str);
+    final all = list.map((e) => GrowthRecord.fromJson(e)).toList();
+    // 降序排列 (最新的在前面)
+    return all.where((e) => e.petId == petId).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+  }
+
+  /// 添加成长记录
+  static Future<void> addGrowthRecord(GrowthRecord record) async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? str = prefs.getString(kGrowthKey);
+    List<GrowthRecord> all = [];
+    if (str != null) {
+      final List<dynamic> list = jsonDecode(str);
+      all = list.map((e) => GrowthRecord.fromJson(e)).toList();
+    }
+    all.add(record);
+    await prefs.setString(
+      kGrowthKey,
+      jsonEncode(all.map((e) => e.toJson()).toList()),
+    );
+  }
+
+  /// 删除成长记录
+  static Future<void> deleteGrowthRecord(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? str = prefs.getString(kGrowthKey);
+    if (str == null) return;
+
+    final List<dynamic> list = jsonDecode(str);
+    List<GrowthRecord> all = list.map((e) => GrowthRecord.fromJson(e)).toList();
+    all.removeWhere((e) => e.id == id);
+    await prefs.setString(
+      kGrowthKey,
+      jsonEncode(all.map((e) => e.toJson()).toList()),
+    );
+  }
+
   // --- 数据导出/导入功能 ---
 
   /// 导出所有数据为 JSON 字符串
@@ -498,32 +587,59 @@ class PetCareApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: kPrimaryColor,
           surface: kPastelCream,
+          background: kPastelCream,
         ),
         scaffoldBackgroundColor: kPastelCream,
-        fontFamily: null,
+        fontFamily: null, // 使用默认字体，但在TextStyle中加粗增强可读性
         appBarTheme: const AppBarTheme(
-          backgroundColor: kPastelCream,
+          backgroundColor: Colors.transparent, // 透明背景，配合渐变背景使用
           elevation: 0,
           centerTitle: true,
+          scrolledUnderElevation: 0,
           titleTextStyle: TextStyle(
             color: kDarkText,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.5,
           ),
           iconTheme: IconThemeData(color: kDarkText),
         ),
         cardTheme: CardThemeData(
-          elevation: 0,
+          elevation: 4,
+          shadowColor: kPrimaryColor.withValues(alpha: 0.15),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
           color: Colors.white,
+          surfaceTintColor: Colors.white,
         ),
         floatingActionButtonTheme: FloatingActionButtonThemeData(
           backgroundColor: kPrimaryColor,
           foregroundColor: Colors.white,
+          elevation: 4,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+        // 增强输入框样式
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 16,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: const BorderSide(color: kPrimaryColor, width: 2),
           ),
         ),
       ),
@@ -751,85 +867,157 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 800),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: CustomScrollView(
-            slivers: [
-              SliverAppBar(
-                title: const Text('今日萌宠'),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.share),
-                    tooltip: '分享今日日报',
-                    onPressed: _shareDailySummary,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: const Text('今日萌宠'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share),
+            tooltip: '分享今日日报',
+            onPressed: _shareDailySummary,
+          ),
+          IconButton(
+            icon: const Icon(Icons.monitor_weight_rounded),
+            tooltip: '成长记录',
+            onPressed: () {
+              if (_currentPetId.isEmpty) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => GrowthPage(pet: _currentPet),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: '活动日志',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ActivityLogPage(),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.cloud_sync),
+            tooltip: '云端同步设置',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CloudSettingsPage(),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings_rounded),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const PetListPage()),
+              );
+              _loadData();
+            },
+          ),
+        ],
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [kPastelCream, Colors.white],
+          ),
+        ),
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 800),
+            child: CustomScrollView(
+              slivers: [
+                const SliverToBoxAdapter(child: SizedBox(height: 110)),
+
+                // 1. 今日概览卡片
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: _buildSummaryCard(),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.history),
-                    tooltip: '活动日志',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const ActivityLogPage(),
+                ),
+
+                // 2. 宠物选择器
+                SliverToBoxAdapter(child: _buildPetSelector()),
+
+                // 3. 标题
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.checklist_rounded,
+                          color: kPrimaryColor,
                         ),
-                      );
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.cloud_sync),
-                    tooltip: '云端同步设置',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const CloudSettingsPage(),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${_currentPet.name} 的待办',
+                          style: const TextStyle(
+                            color: kDarkText,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      );
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.settings_rounded),
-                    onPressed: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const PetListPage(),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: kPrimaryColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${_todayEvents.where((e) => !e.isDone).length} 待完成',
+                            style: const TextStyle(
+                              color: kPrimaryColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
-                      );
-                      _loadData(); // 返回后刷新
-                    },
-                  ),
-                ],
-              ),
-              // 宠物切换列表
-              SliverToBoxAdapter(child: _buildPetSelector()),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Text(
-                    '${_currentPet.name} 的待办 (${_todayEvents.where((e) => !e.isDone).length})',
-                    style: const TextStyle(
-                      color: kDarkText,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                      ],
                     ),
                   ),
                 ),
-              ),
-              SliverList(
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  final event = _todayEvents[index];
-                  return _buildEventCard(event);
-                }, childCount: _todayEvents.length),
-              ),
-              const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
-            ],
+
+                // 4. 列表
+                if (_todayEvents.isEmpty)
+                  SliverToBoxAdapter(child: _buildEmptyState())
+                else
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final event = _todayEvents[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _buildEventCard(event),
+                      );
+                    }, childCount: _todayEvents.length),
+                  ),
+
+                const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
+              ],
+            ),
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
           if (_currentPetId.isEmpty) return;
           await Navigator.push(
@@ -840,7 +1028,125 @@ class _HomePageState extends State<HomePage> {
           );
           _loadData();
         },
-        child: const Icon(Icons.add, size: 32),
+        icon: const Icon(Icons.add),
+        label: const Text('记一笔'),
+      ),
+    );
+  }
+
+  Widget _buildSummaryCard() {
+    final pendingCount = _todayEvents.where((e) => !e.isDone).length;
+    final doneCount = _todayEvents.where((e) => e.isDone).length;
+    final total = _todayEvents.length;
+    final progress = total == 0 ? 0.0 : doneCount / total;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [kPrimaryColor, Color(0xFFFFCCBC)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: kPrimaryColor.withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.wb_sunny_rounded, color: Colors.white, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                '早安，铲屎官！',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            pendingCount == 0 && total > 0
+                ? '太棒了！今日任务全部完成 🎉'
+                : '今天还有 $pendingCount 个任务等着你哦 💪',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    backgroundColor: Colors.white.withValues(alpha: 0.3),
+                    valueColor: const AlwaysStoppedAnimation(Colors.white),
+                    minHeight: 8,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '${(progress * 100).toInt()}%',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Container(
+      padding: const EdgeInsets.all(40),
+      alignment: Alignment.center,
+      child: Column(
+        children: [
+          Icon(
+            Icons.task_alt,
+            size: 64,
+            color: kPrimaryColor.withValues(alpha: 0.2),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '今天还没有安排事项',
+            style: TextStyle(
+              color: kDarkText.withValues(alpha: 0.5),
+              fontSize: 16,
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (_currentPetId.isEmpty) return;
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AddEventPage(petId: _currentPetId),
+                ),
+              );
+              _loadData();
+            },
+            child: const Text('去添加'),
+          ),
+        ],
       ),
     );
   }
@@ -848,11 +1154,12 @@ class _HomePageState extends State<HomePage> {
   /// 横向宠物选择器
   Widget _buildPetSelector() {
     return Container(
-      height: 120,
-      margin: const EdgeInsets.only(bottom: 16),
+      height: 140, // 增加高度以容纳更大的卡片
+      margin: const EdgeInsets.only(bottom: 8),
       child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         scrollDirection: Axis.horizontal,
-        itemCount: _pets.length + 1, // +1 for Add button
+        itemCount: _pets.length + 1,
         itemBuilder: (context, index) {
           if (index == _pets.length) {
             // Add Button
@@ -868,14 +1175,24 @@ class _HomePageState extends State<HomePage> {
                 width: 80,
                 margin: const EdgeInsets.only(right: 16),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: kDarkText.withValues(alpha: 0.2),
-                    width: 1,
+                    color: kDarkText.withValues(alpha: 0.1),
+                    width: 2,
                   ),
                 ),
-                child: const Icon(Icons.add, color: kDarkText),
+                child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add, color: kDarkText, size: 32),
+                    SizedBox(height: 4),
+                    Text(
+                      '添加',
+                      style: TextStyle(color: kDarkText, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
             );
           }
@@ -891,45 +1208,55 @@ class _HomePageState extends State<HomePage> {
               });
               _loadData();
             },
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: isSelected ? 100 : 80,
               margin: const EdgeInsets.only(right: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isSelected ? kPrimaryColor : Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: isSelected
+                        ? kPrimaryColor.withValues(alpha: 0.4)
+                        : Colors.black.withValues(alpha: 0.05),
+                    blurRadius: isSelected ? 12 : 4,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+                border: isSelected
+                    ? null
+                    : Border.all(
+                        color: kDarkText.withValues(alpha: 0.05),
+                        width: 1,
+                      ),
+              ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: isSelected ? 80 : 60,
-                    height: isSelected ? 80 : 60,
+                  Container(
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: isSelected ? kPastelYellow : Colors.white,
+                      color: isSelected
+                          ? Colors.white.withValues(alpha: 0.2)
+                          : kPastelYellow.withValues(alpha: 0.5),
                       shape: BoxShape.circle,
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: kPrimaryColor.withValues(alpha: 0.3),
-                                blurRadius: 8,
-                                offset: const Offset(0, 4),
-                              ),
-                            ]
-                          : [],
-                      border: isSelected
-                          ? Border.all(color: kDarkText, width: 2)
-                          : null,
                     ),
                     child: Icon(
                       icon,
-                      size: isSelected ? 40 : 30,
-                      color: kDarkText,
+                      size: 32,
+                      color: isSelected ? Colors.white : kDarkText,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Text(
                     pet.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontWeight: isSelected
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                      color: kDarkText,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? Colors.white : kDarkText,
                       fontSize: isSelected ? 14 : 12,
                     ),
                   ),
@@ -969,18 +1296,34 @@ class _HomePageState extends State<HomePage> {
 
   /// 事项卡片
   Widget _buildEventCard(CareEvent event) {
+    final isDone = event.isDone;
+
     return Dismissible(
       key: Key(event.id),
       direction: DismissDirection.endToStart,
       background: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.redAccent,
-          borderRadius: BorderRadius.circular(24),
+          color: Colors.redAccent.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(20),
         ),
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 24),
-        child: const Icon(Icons.delete, color: Colors.white, size: 32),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(
+              '删除',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            SizedBox(width: 8),
+            Icon(Icons.delete_outline, color: Colors.white, size: 28),
+          ],
+        ),
       ),
       confirmDismiss: (direction) async {
         return await showDialog(
@@ -1002,72 +1345,148 @@ class _HomePageState extends State<HomePage> {
         );
       },
       onDismissed: (direction) => _deleteEvent(event),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: event.isDone
-              ? Colors.white.withValues(alpha: 0.6)
-              : Colors.white,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 8,
-          ),
-          leading: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: event.type.color.withValues(alpha: 0.5),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(event.type.icon, color: kDarkText, size: 24),
-          ),
-          title: Text(
-            event.type.label,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: kDarkText,
-              decoration: event.isDone ? TextDecoration.lineThrough : null,
-            ),
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                DateFormat('HH:mm').format(event.dateTime),
-                style: TextStyle(color: kDarkText.withValues(alpha: 0.5)),
+      child: GestureDetector(
+        onTap: () async {
+          // 点击进入编辑页
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AddEventPage(
+                petId: event.petId,
+                eventToEdit: event, // 传入已有事件进行编辑
               ),
-              if (event.note.isNotEmpty)
-                Text(
-                  event.note,
-                  style: TextStyle(color: kDarkText.withValues(alpha: 0.8)),
-                ),
-            ],
+            ),
+          );
+          _loadData();
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: isDone ? Colors.white.withValues(alpha: 0.8) : Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: isDone
+                ? []
+                : [
+                    BoxShadow(
+                      color: kPrimaryColor.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+            border: isDone
+                ? Border.all(color: Colors.grey.withValues(alpha: 0.2))
+                : null,
           ),
-          trailing: Transform.scale(
-            scale: 1.2,
-            child: Checkbox(
-              value: event.isDone,
-              activeColor: kPrimaryColor,
-              shape: const CircleBorder(),
-              onChanged: (val) => _toggleEvent(event),
+          child: IntrinsicHeight(
+            child: Row(
+              children: [
+                // Color Bar
+                Container(
+                  width: 6,
+                  decoration: BoxDecoration(
+                    color: isDone ? Colors.grey[300] : event.type.color,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      bottomLeft: Radius.circular(24),
+                    ),
+                  ),
+                ),
+                // Content
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        // Icon
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDone
+                                ? Colors.grey[100]
+                                : event.type.color.withValues(alpha: 0.3),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            event.type.icon,
+                            color: isDone ? Colors.grey : kDarkText,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        // Text
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                event.type.label,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDone ? Colors.grey : kDarkText,
+                                  decoration: isDone
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.access_time_rounded,
+                                    size: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    DateFormat('HH:mm').format(event.dateTime),
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  if (event.note.isNotEmpty) ...[
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        event.note,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Checkbox
+                        Transform.scale(
+                          scale: 1.2,
+                          child: Checkbox(
+                            value: isDone,
+                            activeColor: kPrimaryColor,
+                            shape: const CircleBorder(),
+                            side: BorderSide(
+                              color: Colors.grey[300]!,
+                              width: 2,
+                            ),
+                            onChanged: (val) => _toggleEvent(event),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          onTap: () async {
-            // 点击进入编辑页
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => AddEventPage(
-                  petId: event.petId,
-                  eventToEdit: event, // 传入已有事件进行编辑
-                ),
-              ),
-            );
-            _loadData();
-          },
         ),
       ),
     );
