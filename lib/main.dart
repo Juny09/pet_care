@@ -11,6 +11,7 @@ import 'login_page.dart';
 
 import 'activity_log_page.dart';
 import 'growth_page.dart';
+import 'health_page.dart';
 import 'about_page.dart';
 
 // ---------------------------------------------------------------------------
@@ -479,6 +480,34 @@ class StorageService {
     }
   }
 
+  /// 删除事项 (Public)
+  static Future<void> deleteEvent(CareEvent event) async {
+    // 1. 本地删除
+    final events = await getEvents();
+    events.removeWhere((e) => e.id == event.id);
+    await saveEvents(events);
+
+    // 2. 云端删除
+    if (CloudService.isEnabled) {
+      try {
+        await CloudService.client!.from('events').delete().eq('id', event.id);
+
+        // 尝试取消关联的通知
+        final notificationId =
+            int.tryParse(event.id.substring(event.id.length - 9)) ?? 0;
+        await NotificationService.cancelNotification(notificationId);
+
+        // 记录日志
+        await CloudService.logActivity(
+          '删除事项',
+          '删除了 ${event.type.label} (${DateFormat('MM-dd HH:mm').format(event.dateTime)})',
+        );
+      } catch (e) {
+        debugPrint('Cloud delete event error: $e');
+      }
+    }
+  }
+
   // --- 成长记录 (Growth Records) ---
 
   /// 获取成长记录
@@ -876,6 +905,19 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.share),
             tooltip: '分享今日日报',
             onPressed: _shareDailySummary,
+          ),
+          IconButton(
+            icon: const Icon(Icons.medical_services_outlined),
+            tooltip: '健康提醒',
+            onPressed: () {
+              if (_currentPetId.isEmpty) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => HealthPage(pet: _currentPet),
+                ),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.monitor_weight_rounded),

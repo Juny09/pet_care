@@ -1,5 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 import 'main.dart'; // Import models and storage service
 
 class GrowthPage extends StatefulWidget {
@@ -11,13 +15,21 @@ class GrowthPage extends StatefulWidget {
   State<GrowthPage> createState() => _GrowthPageState();
 }
 
-class _GrowthPageState extends State<GrowthPage> {
+class _GrowthPageState extends State<GrowthPage> with SingleTickerProviderStateMixin {
   List<GrowthRecord> _records = [];
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadRecords();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadRecords() async {
@@ -42,11 +54,22 @@ class _GrowthPageState extends State<GrowthPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text('${widget.pet.name} 的成长日记'),
         backgroundColor: Colors.transparent,
+        elevation: 0,
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: kPrimaryColor,
+          labelColor: kDarkText,
+          unselectedLabelColor: kDarkText.withValues(alpha: 0.5),
+          tabs: const [
+            Tab(text: '体重记录'),
+            Tab(text: '照片墙'),
+          ],
+        ),
       ),
-      extendBodyBehindAppBar: true,
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -55,22 +78,123 @@ class _GrowthPageState extends State<GrowthPage> {
             colors: [kPastelCream, Colors.white],
           ),
         ),
-        child: _records.isEmpty
-            ? _buildEmptyState()
-            : ListView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 100, 16, 80),
-                itemCount: _records.length,
-                itemBuilder: (context, index) {
-                  final record = _records[index];
-                  return _buildRecordCard(record, index);
-                },
-              ),
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            // Tab 1: Weight List
+            _records.isEmpty
+                ? _buildEmptyState()
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 120, 16, 80),
+                    itemCount: _records.length,
+                    itemBuilder: (context, index) {
+                      final record = _records[index];
+                      return _buildRecordCard(record, index);
+                    },
+                  ),
+            // Tab 2: Photo Grid
+            _buildPhotoGrid(),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addRecord,
         icon: const Icon(Icons.add),
-        label: const Text('记录体重'),
+        label: const Text('记录成长'),
       ),
+    );
+  }
+
+  Widget _buildPhotoGrid() {
+    final photoRecords = _records.where((r) => r.photoPath != null && r.photoPath!.isNotEmpty).toList();
+
+    if (photoRecords.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.photo_library_outlined, size: 80, color: kPrimaryColor.withValues(alpha: 0.3)),
+            const SizedBox(height: 16),
+            Text(
+              '还没有照片哦',
+              style: TextStyle(color: kDarkText.withValues(alpha: 0.5), fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 120, 16, 80),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.8,
+      ),
+      itemCount: photoRecords.length,
+      itemBuilder: (context, index) {
+        final record = photoRecords[index];
+        return GestureDetector(
+          onTap: () {
+            // TODO: Show full screen image
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.file(
+                    File(record.photoPath!),
+                    fit: BoxFit.cover,
+                    errorBuilder: (ctx, err, stack) => Container(
+                      color: Colors.grey[200],
+                      child: const Icon(Icons.broken_image, color: Colors.grey),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.6),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                      child: Text(
+                        DateFormat('yyyy-MM-dd').format(record.date),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -146,6 +270,20 @@ class _GrowthPageState extends State<GrowthPage> {
             ),
           ),
           const SizedBox(width: 16),
+          // Thumbnail if exists
+          if (record.photoPath != null && record.photoPath!.isNotEmpty)
+            Container(
+              width: 50,
+              height: 50,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                image: DecorationImage(
+                  image: FileImage(File(record.photoPath!)),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,6 +383,23 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
+  String? _photoPath;
+  final ImagePicker _picker = ImagePicker();
+
+  Future<void> _pickImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      // Save image to app directory
+      final directory = await getApplicationDocumentsDirectory();
+      final String fileName = '${DateTime.now().millisecondsSinceEpoch}_${path.basename(image.path)}';
+      final String savedPath = path.join(directory.path, fileName);
+      await image.saveTo(savedPath);
+
+      setState(() {
+        _photoPath = savedPath;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -259,7 +414,7 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            '记录体重',
+            '记录成长',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
@@ -311,6 +466,53 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
             ],
           ),
           const SizedBox(height: 16),
+          // Photo Picker
+          GestureDetector(
+            onTap: _pickImage,
+            child: Container(
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                image: _photoPath != null
+                    ? DecorationImage(
+                        image: FileImage(File(_photoPath!)),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+              ),
+              child: _photoPath == null
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_a_photo, color: kDarkText.withValues(alpha: 0.5), size: 32),
+                        const SizedBox(height: 8),
+                        Text('添加照片', style: TextStyle(color: kDarkText.withValues(alpha: 0.5))),
+                      ],
+                    )
+                  : Stack(
+                      children: [
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: GestureDetector(
+                            onTap: () => setState(() => _photoPath = null),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close, color: Colors.white, size: 16),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+          const SizedBox(height: 16),
           TextField(
             controller: _noteController,
             decoration: const InputDecoration(
@@ -347,6 +549,7 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
       date: _selectedDate,
       weight: weight,
       note: _noteController.text,
+      photoPath: _photoPath,
     );
 
     await StorageService.addGrowthRecord(record);
