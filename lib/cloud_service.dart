@@ -10,6 +10,10 @@ class CloudService {
   static const String kSupabaseAnonKeyKey = 'supabase_key';
   static const String kUseCloudKey = 'use_cloud';
 
+  // 用户提供的默认配置
+  static const String _defaultUrl = 'https://cgahmjsszehiwrdpfftp.supabase.co';
+  static const String _defaultKey = 'sb_publishable_t0xcgza-0tIY0G0eXwQluA_LAqEaqTw';
+
   static SupabaseClient? _client;
   static bool _isInitialized = false;
 
@@ -22,24 +26,23 @@ class CloudService {
   /// 初始化
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final url = prefs.getString(kSupabaseUrlKey);
-    final key = prefs.getString(kSupabaseAnonKeyKey);
-    final useCloud = prefs.getBool(kUseCloudKey) ?? false;
+    
+    // 优先使用保存的配置，如果没有则使用默认配置
+    String url = prefs.getString(kSupabaseUrlKey) ?? _defaultUrl;
+    String key = prefs.getString(kSupabaseAnonKeyKey) ?? _defaultKey;
+    
+    // 默认开启云端 (如果用户没有显式关闭)
+    final useCloud = prefs.getBool(kUseCloudKey) ?? true;
 
-    if (useCloud &&
-        url != null &&
-        url.isNotEmpty &&
-        key != null &&
-        key.isNotEmpty) {
+    if (useCloud && url.isNotEmpty && key.isNotEmpty) {
       try {
-        await Supabase.initialize(url: url, anonKey: key);
+        await Supabase.initialize(url: url.trim(), anonKey: key.trim());
         _client = Supabase.instance.client;
         _isInitialized = true;
         debugPrint('Supabase initialized successfully');
       } catch (e) {
         debugPrint('Supabase initialization failed: $e');
         _isInitialized = false;
-        // 如果初始化失败，可能 key 错了，暂时降级为本地模式
       }
     }
   }
