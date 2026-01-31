@@ -14,15 +14,16 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _isRegistering = false; // 切换登录/注册模式
+  bool _isPasswordVisible = false; // 控制密码可见性
 
   Future<void> _submit() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入邮箱和密码')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入邮箱和密码')));
       return;
     }
 
@@ -36,9 +37,9 @@ class _LoginPageState extends State<LoginPage> {
           password: password,
         );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('注册成功！请登录')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('注册成功！请登录')));
           setState(() => _isRegistering = false);
         }
       } else {
@@ -58,11 +59,77 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('发生错误，请稍后重试'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('发生错误，请稍后重试'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    final emailController = TextEditingController();
+
+    final email = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('重置密码'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('请输入您的注册邮箱，我们将发送重置链接给您。'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: emailController,
+              decoration: const InputDecoration(
+                labelText: '邮箱',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () =>
+                Navigator.pop(context, emailController.text.trim()),
+            child: const Text('发送'),
+          ),
+        ],
+      ),
+    );
+
+    if (email == null || email.isEmpty) return;
+
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(email);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('重置链接已发送，请检查邮箱')));
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('发送失败，请稍后重试'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -118,12 +185,37 @@ class _LoginPageState extends State<LoginPage> {
                   decoration: InputDecoration(
                     labelText: '密码',
                     prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _isPasswordVisible
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isPasswordVisible = !_isPasswordVisible;
+                        });
+                      },
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  obscureText: true,
+                  obscureText: !_isPasswordVisible,
                 ),
+                if (!_isRegistering)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _resetPassword,
+                      child: Text(
+                        '忘记密码？',
+                        style: TextStyle(
+                          color: kDarkText.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
@@ -141,11 +233,17 @@ class _LoginPageState extends State<LoginPage> {
                         ? const SizedBox(
                             width: 24,
                             height: 24,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
                           )
                         : Text(
                             _isRegistering ? '注 册' : '登 录',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                   ),
                 ),
