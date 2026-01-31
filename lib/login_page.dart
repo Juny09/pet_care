@@ -52,8 +52,16 @@ class _LoginPageState extends State<LoginPage> {
       }
     } on AuthException catch (e) {
       if (mounted) {
+        String message = e.message;
+        if (message.contains('email rate limit exceeded')) {
+          message = '邮件发送过于频繁，请稍后再试';
+        } else if (message.contains('Invalid login credentials')) {
+          message = '邮箱或密码错误';
+        } else if (message.contains('User already registered')) {
+          message = '该邮箱已被注册';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
