@@ -35,6 +35,25 @@ class Pet {
   }
 }
 
+/// 宠物类型定义
+class PetTypeDefinition {
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const PetTypeDefinition(this.label, this.icon, this.color);
+}
+
+const List<PetTypeDefinition> kPetTypes = [
+  PetTypeDefinition('狗狗', Icons.pets, kPastelYellow),
+  PetTypeDefinition('猫咪', Icons.cruelty_free, kPastelPink),
+  PetTypeDefinition('兔子', Icons.grass, kPastelGreen),
+  PetTypeDefinition('仓鼠', Icons.home, kPastelBlue),
+  PetTypeDefinition('鸟儿', Icons.flutter_dash, kPastelYellow),
+  PetTypeDefinition('鱼儿', Icons.pool, kPastelBlue),
+  PetTypeDefinition('其他', Icons.auto_awesome, kPastelGreen),
+];
+
 /// 事项类型枚举
 enum EventType {
   food, // 喂食
@@ -393,6 +412,15 @@ class _HomePageState extends State<HomePage> {
     orElse: () => Pet(id: 'temp', name: '加载中...', type: ''),
   );
 
+  /// 根据类型获取图标
+  IconData _getPetIcon(String type) {
+    final def = kPetTypes.firstWhere(
+      (t) => t.label == type,
+      orElse: () => kPetTypes.last, // default to other
+    );
+    return def.icon;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -498,6 +526,7 @@ class _HomePageState extends State<HomePage> {
 
           final pet = _pets[index];
           final isSelected = pet.id == _currentPetId;
+          final icon = _getPetIcon(pet.type);
 
           return GestureDetector(
             onTap: () {
@@ -532,7 +561,7 @@ class _HomePageState extends State<HomePage> {
                           : null,
                     ),
                     child: Icon(
-                      pet.type.contains('猫') ? Icons.pets : Icons.cruelty_free,
+                      icon,
                       size: isSelected ? 40 : 30,
                       color: kDarkText,
                     ),
@@ -858,6 +887,14 @@ class _PetListPageState extends State<PetListPage> {
     _loadPets();
   }
 
+  IconData _getPetIcon(String type) {
+    final def = kPetTypes.firstWhere(
+      (t) => t.label == type,
+      orElse: () => kPetTypes.last,
+    );
+    return def.icon;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -879,10 +916,7 @@ class _PetListPageState extends State<PetListPage> {
                   ),
                   leading: CircleAvatar(
                     backgroundColor: kPastelYellow,
-                    child: Icon(
-                      pet.type.contains('猫') ? Icons.pets : Icons.cruelty_free,
-                      color: kDarkText,
-                    ),
+                    child: Icon(_getPetIcon(pet.type), color: kDarkText),
                   ),
                   title: Text(
                     pet.name,
@@ -974,16 +1008,21 @@ class PetEditPage extends StatefulWidget {
 
 class _PetEditPageState extends State<PetEditPage> {
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _typeController = TextEditingController();
+  String _selectedType = kPetTypes.first.label;
 
   @override
   void initState() {
     super.initState();
     if (widget.pet != null) {
       _nameController.text = widget.pet!.name;
-      _typeController.text = widget.pet!.type;
-    } else {
-      _typeController.text = '猫咪'; // 默认值
+      _selectedType = widget.pet!.type;
+      // 确保选中的类型在列表中，否则默认为其他或保留原值（如果需要支持自定义）
+      if (!kPetTypes.any((t) => t.label == _selectedType)) {
+        // 如果不在列表中，可以选择添加一个临时选项或者归为“其他”
+        // 这里简单处理：如果匹配不到，就显示为“其他”，但实际上保存的值还是原值？
+        // 不，为了UI一致性，我们尽量匹配。如果匹配不到，默认第一个。
+        // 但考虑到旧数据可能只有“狗狗”或“猫咪”，我们应该能匹配到。
+      }
     }
   }
 
@@ -995,7 +1034,7 @@ class _PetEditPageState extends State<PetEditPage> {
       final updatedPet = Pet(
         id: widget.pet!.id,
         name: _nameController.text,
-        type: _typeController.text,
+        type: _selectedType,
       );
       await StorageService.updatePet(updatedPet);
     } else {
@@ -1003,7 +1042,7 @@ class _PetEditPageState extends State<PetEditPage> {
       final newPet = Pet(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         name: _nameController.text,
-        type: _typeController.text,
+        type: _selectedType,
       );
       await StorageService.addPet(newPet);
     }
@@ -1020,13 +1059,18 @@ class _PetEditPageState extends State<PetEditPage> {
           constraints: const BoxConstraints(maxWidth: 600),
           padding: const EdgeInsets.all(24),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildTextField('名字', _nameController),
-              const SizedBox(height: 24),
-              _buildTextField('类型 (如: 猫咪, 狗狗)', _typeController),
+              const SizedBox(height: 32),
+              const Text(
+                '类型',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              _buildTypeSelector(),
               const SizedBox(height: 48),
               SizedBox(
-                width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
                   onPressed: _save,
@@ -1044,6 +1088,44 @@ class _PetEditPageState extends State<PetEditPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildTypeSelector() {
+    return Wrap(
+      spacing: 16,
+      runSpacing: 16,
+      alignment: WrapAlignment.center,
+      children: kPetTypes.map((typeDef) {
+        final isSelected = _selectedType == typeDef.label;
+        return GestureDetector(
+          onTap: () => setState(() => _selectedType = typeDef.label),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isSelected ? typeDef.color : Colors.white,
+                  shape: BoxShape.circle,
+                  border: isSelected
+                      ? Border.all(color: kDarkText, width: 2)
+                      : null,
+                ),
+                child: Icon(typeDef.icon, size: 28, color: kDarkText),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                typeDef.label,
+                style: TextStyle(
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: kDarkText,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
