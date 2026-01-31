@@ -109,7 +109,10 @@ class _LoginPageState extends State<LoginPage> {
     if (email == null || email.isEmpty) return;
 
     try {
-      await Supabase.instance.client.auth.resetPasswordForEmail(email);
+      await Supabase.instance.client.auth.resetPasswordForEmail(
+        email,
+        redirectTo: 'io.supabase.petcare://login-callback/',
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,

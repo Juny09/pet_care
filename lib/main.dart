@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'cloud_service.dart';
 import 'notification_service.dart';
 import 'login_page.dart';
+import 'password_reset_page.dart';
 
 import 'activity_log_page.dart';
 import 'growth_page.dart';
