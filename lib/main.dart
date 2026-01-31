@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'cloud_service.dart';
+import 'notification_service.dart';
 
 // ---------------------------------------------------------------------------
 // 🎨 配色方案 (Color Palette)
@@ -26,15 +27,31 @@ class Pet {
   final String id;
   final String name;
   final String type;
+  final int? iconCodePoint; // 新增：自定义图标代码
 
-  Pet({required this.id, required this.name, required this.type});
+  Pet({
+    required this.id,
+    required this.name,
+    required this.type,
+    this.iconCodePoint,
+  });
 
   Map<String, dynamic> toJson() {
-    return {'id': id, 'name': name, 'type': type};
+    return {
+      'id': id,
+      'name': name,
+      'type': type,
+      'iconCodePoint': iconCodePoint,
+    };
   }
 
   factory Pet.fromJson(Map<String, dynamic> json) {
-    return Pet(id: json['id'], name: json['name'], type: json['type']);
+    return Pet(
+      id: json['id'],
+      name: json['name'],
+      type: json['type'],
+      iconCodePoint: json['iconCodePoint'],
+    );
   }
 }
 
@@ -434,6 +451,7 @@ class StorageService {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.init(); // 初始化通知
   await CloudService.init();
   runApp(const PetCareApp());
 }
@@ -598,9 +616,14 @@ class _HomePageState extends State<HomePage> {
   );
 
   /// 根据类型获取图标
-  IconData _getPetIcon(String type) {
+  IconData _getPetIcon(Pet pet) {
+    // 如果有自定义图标，优先使用
+    if (pet.iconCodePoint != null) {
+      return IconData(pet.iconCodePoint!, fontFamily: 'MaterialIcons');
+    }
+    // 否则使用默认类型映射
     final def = kPetTypes.firstWhere(
-      (t) => t.label == type,
+      (t) => t.label == pet.type,
       orElse: () => kPetTypes.last, // default to other
     );
     return def.icon;
@@ -759,7 +782,7 @@ class _HomePageState extends State<HomePage> {
 
           final pet = _pets[index];
           final isSelected = pet.id == _currentPetId;
-          final icon = _getPetIcon(pet.type);
+          final icon = _getPetIcon(pet);
 
           return GestureDetector(
             onTap: () {
@@ -894,6 +917,7 @@ class _AddEventPageState extends State<AddEventPage> {
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   final TextEditingController _noteController = TextEditingController();
+  bool _enableReminder = false; // 新增：是否开启提醒
 
   Future<void> _saveEvent() async {
     final dateTime = DateTime(
@@ -904,8 +928,9 @@ class _AddEventPageState extends State<AddEventPage> {
       _selectedTime.minute,
     );
 
+    final eventId = DateTime.now().millisecondsSinceEpoch.toString();
     final newEvent = CareEvent(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: eventId,
       petId: widget.petId,
       type: _selectedType,
       dateTime: dateTime,
@@ -913,6 +938,22 @@ class _AddEventPageState extends State<AddEventPage> {
     );
 
     await StorageService.addEvent(newEvent);
+
+    // 设置通知
+    if (_enableReminder) {
+      // 使用 eventId 的 hash code 作为通知 ID (简单处理，可能有冲突风险，但在demo中可接受)
+      // 或者解析 eventId 如果它是数字。这里 id 是 string timestamp。
+      // 取后9位转int
+      final notificationId =
+          int.tryParse(eventId.substring(eventId.length - 9)) ?? 0;
+      await NotificationService.scheduleNotification(
+        id: notificationId,
+        title: '该给毛孩子${_selectedType.label}啦！',
+        body: '时间到了：${DateFormat('HH:mm').format(dateTime)}',
+        scheduledTime: dateTime,
+      );
+    }
+
     if (mounted) Navigator.pop(context);
   }
 
@@ -1009,6 +1050,24 @@ class _AddEventPageState extends State<AddEventPage> {
                 ],
               ),
               const SizedBox(height: 32),
+
+              // 2.5 提醒开关
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  '开启提醒',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(_enableReminder ? '到时间会发送通知提醒你' : '不提醒'),
+                value: _enableReminder,
+                activeColor: kPrimaryColor,
+                onChanged: (val) {
+                  setState(() {
+                    _enableReminder = val;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
 
               // 3. 备注
               const Text(
@@ -1392,18 +1451,26 @@ class _PetEditPageState extends State<PetEditPage> {
   final TextEditingController _nameController = TextEditingController();
   String _selectedType = kPetTypes.first.label;
 
+  // 新增：自定义类型逻辑
+  final TextEditingController _customTypeController = TextEditingController();
+  int? _selectedIconCodePoint;
+
+  bool get _isOtherType => _selectedType == '其他';
+
   @override
   void initState() {
     super.initState();
     if (widget.pet != null) {
       _nameController.text = widget.pet!.name;
       _selectedType = widget.pet!.type;
-      // 确保选中的类型在列表中，否则默认为其他或保留原值（如果需要支持自定义）
-      if (!kPetTypes.any((t) => t.label == _selectedType)) {
-        // 如果不在列表中，可以选择添加一个临时选项或者归为“其他”
-        // 这里简单处理：如果匹配不到，就显示为“其他”，但实际上保存的值还是原值？
-        // 不，为了UI一致性，我们尽量匹配。如果匹配不到，默认第一个。
-        // 但考虑到旧数据可能只有“狗狗”或“猫咪”，我们应该能匹配到。
+      _selectedIconCodePoint = widget.pet!.iconCodePoint;
+
+      // 如果类型不在预定义列表中，说明是自定义类型
+      final isPredefined = kPetTypes.any((t) => t.label == _selectedType);
+      if (!isPredefined) {
+        // 视为“其他”并填入自定义名称
+        _customTypeController.text = _selectedType;
+        _selectedType = '其他';
       }
     }
   }
@@ -1411,12 +1478,33 @@ class _PetEditPageState extends State<PetEditPage> {
   Future<void> _save() async {
     if (_nameController.text.isEmpty) return;
 
+    // 确定最终类型
+    String finalType = _selectedType;
+    if (_isOtherType && _customTypeController.text.isNotEmpty) {
+      finalType = _customTypeController.text;
+    }
+
+    // 确定最终图标
+    // 如果是预定义类型，且用户没有手动选图标(或者逻辑上我们强制预定义类型用默认图标)，
+    // 但为了灵活性，我们允许用户修改。
+    // 简单起见：如果是“其他”，必须选图标（或有默认）。
+    // 如果是预定义，使用预定义图标（除非我们想做更复杂）。
+    // 这里逻辑：如果不是其他，iconCodePoint 为 null (使用默认)。如果是其他，iconCodePoint 必须有值。
+    int? finalIconCodePoint = _selectedIconCodePoint;
+    if (!_isOtherType) {
+      finalIconCodePoint = null; // 重置为默认
+    } else if (finalIconCodePoint == null) {
+      // 如果是其他但没选图标，给个默认星星
+      finalIconCodePoint = Icons.star.codePoint;
+    }
+
     if (widget.pet != null) {
       // Update
       final updatedPet = Pet(
         id: widget.pet!.id,
         name: _nameController.text,
-        type: _selectedType,
+        type: finalType,
+        iconCodePoint: finalIconCodePoint,
       );
       await StorageService.updatePet(updatedPet);
     } else {
@@ -1424,7 +1512,8 @@ class _PetEditPageState extends State<PetEditPage> {
       final newPet = Pet(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         name: _nameController.text,
-        type: _selectedType,
+        type: finalType,
+        iconCodePoint: finalIconCodePoint,
       );
       await StorageService.addPet(newPet);
     }
@@ -1451,6 +1540,35 @@ class _PetEditPageState extends State<PetEditPage> {
               ),
               const SizedBox(height: 12),
               _buildTypeSelector(),
+
+              if (_isOtherType) ...[
+                const SizedBox(height: 24),
+                const Text(
+                  '自定义类型',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _customTypeController,
+                  decoration: InputDecoration(
+                    hintText: '例如：乌龟、鹦鹉...',
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  '选择图标',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                _buildIconGrid(),
+              ],
+
               const SizedBox(height: 48),
               SizedBox(
                 height: 56,
@@ -1481,7 +1599,19 @@ class _PetEditPageState extends State<PetEditPage> {
       children: kPetTypes.map((typeDef) {
         final isSelected = _selectedType == typeDef.label;
         return GestureDetector(
-          onTap: () => setState(() => _selectedType = typeDef.label),
+          onTap: () => setState(() {
+            _selectedType = typeDef.label;
+            // 如果切回普通类型，清除自定义状态
+            if (typeDef.label != '其他') {
+              _customTypeController.clear();
+              _selectedIconCodePoint = null;
+            } else {
+              // 默认选中一个图标
+              if (_selectedIconCodePoint == null) {
+                _selectedIconCodePoint = Icons.auto_awesome.codePoint;
+              }
+            }
+          }),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1505,6 +1635,59 @@ class _PetEditPageState extends State<PetEditPage> {
                 ),
               ),
             ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // 图标选择网格
+  Widget _buildIconGrid() {
+    final icons = [
+      Icons.auto_awesome,
+      Icons.star,
+      Icons.favorite,
+      Icons.pets,
+      Icons.bug_report,
+      Icons.emoji_nature,
+      Icons.forest,
+      Icons.grass,
+      Icons.local_florist,
+      Icons.wb_sunny,
+      Icons.nightlight_round,
+      Icons.water_drop,
+      Icons.air,
+      Icons.cookie,
+      Icons.cake,
+      Icons.sports_baseball,
+      Icons.music_note,
+      Icons.palette,
+      Icons.flight,
+      Icons.rocket_launch,
+      Icons.diamond,
+      Icons.spa,
+    ];
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      alignment: WrapAlignment.center,
+      children: icons.map((icon) {
+        final isSelected = _selectedIconCodePoint == icon.codePoint;
+        return GestureDetector(
+          onTap: () => setState(() => _selectedIconCodePoint = icon.codePoint),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? kPrimaryColor.withValues(alpha: 0.3)
+                  : Colors.white,
+              shape: BoxShape.circle,
+              border: isSelected
+                  ? Border.all(color: kPrimaryColor, width: 2)
+                  : null,
+            ),
+            child: Icon(icon, color: kDarkText, size: 24),
           ),
         );
       }).toList(),
