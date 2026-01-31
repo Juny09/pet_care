@@ -4,8 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'cloud_service.dart';
 import 'notification_service.dart';
+import 'login_page.dart';
 
 // ---------------------------------------------------------------------------
 // 🎨 配色方案 (Color Palette)
@@ -498,8 +500,53 @@ class PetCareApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const HomePage(),
+      home: const AuthWrapper(),
     );
+  }
+}
+
+/// 认证包装器：根据云端配置和登录状态决定显示哪个页面
+class AuthWrapper extends StatefulWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  bool _showLogin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuth();
+
+    // 监听 Auth 状态变化
+    if (CloudService.isEnabled) {
+      Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+        _checkAuth();
+      });
+    }
+  }
+
+  void _checkAuth() {
+    setState(() {
+      if (!CloudService.isEnabled) {
+        _showLogin = false; // 本地模式不需要登录
+      } else {
+        // 云端模式，检查是否有用户
+        final user = Supabase.instance.client.auth.currentUser;
+        _showLogin = user == null;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showLogin) {
+      return const LoginPage();
+    }
+    return const HomePage();
   }
 }
 
@@ -1196,6 +1243,17 @@ class _PetListPageState extends State<PetListPage> {
 
   // --- 数据导出/导入 UI ---
 
+  Future<void> _checkUpdate() async {
+    final url = Uri.parse('https://github.com/Juny09/pet_care/releases');
+    if (!await launchUrl(url)) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('无法打开更新页面')));
+      }
+    }
+  }
+
   Future<void> _showExportDialog() async {
     final jsonStr = await StorageService.exportData();
     if (!mounted) return;
@@ -1374,13 +1432,20 @@ class _PetListPageState extends State<PetListPage> {
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8.0),
                 child: Text(
-                  '数据管理 (多设备同步)',
+                  '更多功能',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: Colors.grey,
                   ),
                 ),
               ),
+              // 检查更新按钮
+              OutlinedButton.icon(
+                onPressed: _checkUpdate,
+                icon: const Icon(Icons.system_update),
+                label: const Text('检查新版本'),
+              ),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
@@ -1400,6 +1465,21 @@ class _PetListPageState extends State<PetListPage> {
                   ),
                 ],
               ),
+              // 如果已登录，显示退出登录
+              if (CloudService.isEnabled &&
+                  Supabase.instance.client.auth.currentUser != null) ...[
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () async {
+                    await Supabase.instance.client.auth.signOut();
+                    if (mounted) Navigator.pop(context); // 退出设置页
+                  },
+                  child: const Text(
+                    '退出登录',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
             ],
           ),
