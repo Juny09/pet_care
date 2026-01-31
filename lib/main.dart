@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'cloud_service.dart';
 
 // ---------------------------------------------------------------------------
 // 🎨 配色方案 (Color Palette)
@@ -160,6 +162,21 @@ class StorageService {
 
   /// 获取所有宠物
   static Future<List<Pet>> getPets() async {
+    // 优先从云端获取
+    if (CloudService.isEnabled) {
+      try {
+        final data = await CloudService.client!
+            .from('pets')
+            .select()
+            .order('created_at', ascending: true);
+        final List<dynamic> list = data;
+        return list.map((e) => Pet.fromJson(e)).toList();
+      } catch (e) {
+        debugPrint('Cloud fetch error: $e');
+        // Fallback to local? For now, return empty or handle error
+      }
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final String? petsString = prefs.getString(kPetsKey);
 
@@ -190,15 +207,30 @@ class StorageService {
 
   /// 保存宠物列表
   static Future<void> savePets(List<Pet> pets) async {
+    // 本地保存
     final prefs = await SharedPreferences.getInstance();
     final String petsString = jsonEncode(pets.map((e) => e.toJson()).toList());
     await prefs.setString(kPetsKey, petsString);
+
+    // 云端同步
+    if (CloudService.isEnabled) {
+      try {
+        // 全量同步策略：upsert
+        for (var pet in pets) {
+          await CloudService.client!.from('pets').upsert(pet.toJson());
+        }
+        // 注意：删除操作需要单独处理，这里暂不处理删除同步的复杂逻辑
+      } catch (e) {
+        debugPrint('Cloud save error: $e');
+      }
+    }
   }
 
   /// 添加宠物
   static Future<void> addPet(Pet pet) async {
     final pets = await getPets();
     pets.add(pet);
+    // 这里调用 savePets 会处理云端同步
     await savePets(pets);
   }
 
@@ -227,10 +259,52 @@ class StorageService {
       );
     }
     await savePets(pets);
+
+    // 云端删除
+    if (CloudService.isEnabled) {
+      try {
+        await CloudService.client!.from('pets').delete().eq('id', petId);
+      } catch (e) {
+        debugPrint('Cloud delete error: $e');
+      }
+    }
   }
 
   /// 获取所有事项
   static Future<List<CareEvent>> getEvents() async {
+    // 云端优先
+    if (CloudService.isEnabled) {
+      try {
+        // 只获取最近30天的记录，避免数据量过大? 暂时全部获取
+        final data = await CloudService.client!
+            .from('events')
+            .select()
+            .order('date_time', ascending: false);
+        final List<dynamic> list = data;
+        return list.map((e) {
+          // Supabase 返回的 key 是下划线风格? 不，我们存的时候用的 toJson 是驼峰?
+          // 修正：我们应该在 toJson/fromJson 处理风格，或者让 Supabase 存 JSONB
+          // 但为了简单，我们让 Supabase 存普通字段。
+          // 我们的 toJson: {'id': id, 'petId': petId ...}
+          // Supabase 建表时字段名如果是 snake_case，我们需要映射。
+          // 假设建表时用了 "pet_id", "date_time", "is_done"。
+
+          // 简单起见，我们在 CloudService 建表 SQL 里用 snake_case，
+          // 这里做映射。
+          return CareEvent(
+            id: e['id'],
+            petId: e['pet_id'] ?? e['petId'] ?? '',
+            type: EventType.values[e['type']],
+            dateTime: DateTime.parse(e['date_time'] ?? e['dateTime']),
+            note: e['note'] ?? '',
+            isDone: e['is_done'] ?? e['isDone'] ?? false,
+          );
+        }).toList();
+      } catch (e) {
+        debugPrint('Cloud events fetch error: $e');
+      }
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final String? eventsString = prefs.getString(kEventsKey);
     if (eventsString == null) return [];
@@ -238,12 +312,12 @@ class StorageService {
     final List<dynamic> jsonList = jsonDecode(eventsString);
     var events = jsonList.map((e) => CareEvent.fromJson(e)).toList();
 
-    // 数据迁移：如果旧事件没有 petId，分配给第一个宠物
+    // 数据迁移
     final pets = await getPets();
     if (pets.isNotEmpty) {
       for (var event in events) {
         if (event.petId.isEmpty) {
-          // 这里的注释解释了为什么不做实际修改，仅供理解
+          // compatible
         }
       }
     }
@@ -253,6 +327,7 @@ class StorageService {
 
   /// 保存事项列表
   static Future<void> saveEvents(List<CareEvent> events) async {
+    // 本地保存
     final prefs = await SharedPreferences.getInstance();
     final String eventsString = jsonEncode(
       events.map((e) => e.toJson()).toList(),
@@ -262,18 +337,55 @@ class StorageService {
 
   /// 添加新事项
   static Future<void> addEvent(CareEvent event) async {
-    final events = await getEvents();
+    // 1. 本地保存
+    final events = await getEvents(); // 注意：如果开启云端，这里拿到的是云端数据
     events.add(event);
-    await saveEvents(events);
+    await saveEvents(events); // 本地存一份备份
+
+    // 2. 云端保存
+    if (CloudService.isEnabled) {
+      try {
+        // 映射字段到 snake_case
+        final data = {
+          'id': event.id,
+          'pet_id': event.petId,
+          'type': event.type.index,
+          'date_time': event.dateTime.toIso8601String(),
+          'note': event.note,
+          'is_done': event.isDone,
+        };
+        await CloudService.client!.from('events').insert(data);
+      } catch (e) {
+        debugPrint('Cloud add event error: $e');
+      }
+    }
   }
 
-  /// 更新事项 (例如切换完成状态)
+  /// 更新事项
   static Future<void> updateEvent(CareEvent updatedEvent) async {
+    // 1. 本地
     final events = await getEvents();
     final index = events.indexWhere((e) => e.id == updatedEvent.id);
     if (index != -1) {
       events[index] = updatedEvent;
       await saveEvents(events);
+    }
+
+    // 2. 云端
+    if (CloudService.isEnabled) {
+      try {
+        final data = {
+          'id': updatedEvent.id,
+          'pet_id': updatedEvent.petId,
+          'type': updatedEvent.type.index,
+          'date_time': updatedEvent.dateTime.toIso8601String(),
+          'note': updatedEvent.note,
+          'is_done': updatedEvent.isDone,
+        };
+        await CloudService.client!.from('events').upsert(data);
+      } catch (e) {
+        debugPrint('Cloud update event error: $e');
+      }
     }
   }
 
@@ -320,7 +432,9 @@ class StorageService {
 // 🚀 主入口 (Main Entry)
 // ---------------------------------------------------------------------------
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await CloudService.init();
   runApp(const PetCareApp());
 }
 
@@ -391,6 +505,38 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _loadData();
+    _initRealtimeSubscription();
+  }
+
+  void _initRealtimeSubscription() {
+    if (CloudService.isEnabled) {
+      // 监听事项表变更
+      CloudService.client!
+          .channel('public:events')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'events',
+            callback: (payload) {
+              debugPrint('Realtime update received: ${payload.toString()}');
+              _loadData();
+            },
+          )
+          .subscribe();
+
+      // 监听宠物表变更
+      CloudService.client!
+          .channel('public:pets')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'pets',
+            callback: (payload) {
+              _loadData();
+            },
+          )
+          .subscribe();
+    }
   }
 
   /// 加载数据
@@ -507,6 +653,18 @@ class _HomePageState extends State<HomePage> {
                     icon: const Icon(Icons.share),
                     tooltip: '分享今日日报',
                     onPressed: _shareDailySummary,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.cloud_sync),
+                    tooltip: '云端同步设置',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CloudSettingsPage(),
+                        ),
+                      );
+                    },
                   ),
                   IconButton(
                     icon: const Icon(Icons.settings_rounded),
