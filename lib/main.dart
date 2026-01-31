@@ -11,6 +11,7 @@ import 'login_page.dart';
 
 import 'activity_log_page.dart';
 import 'growth_page.dart';
+import 'about_page.dart';
 
 // ---------------------------------------------------------------------------
 // 🎨 配色方案 (Color Palette)
@@ -2031,11 +2032,16 @@ class _PetListPageState extends State<PetListPage> {
                   ),
                 ),
               ),
-              // 检查更新按钮
+              // 检查更新按钮 -> 改为 关于我们
               OutlinedButton.icon(
-                onPressed: _checkUpdate,
-                icon: const Icon(Icons.system_update),
-                label: const Text('检查新版本'),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AboutPage()),
+                  );
+                },
+                icon: const Icon(Icons.info_outline),
+                label: const Text('关于我们'),
               ),
               const SizedBox(height: 8),
               Row(
