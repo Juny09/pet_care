@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
@@ -275,6 +276,44 @@ class StorageService {
       await saveEvents(events);
     }
   }
+
+  // --- 数据导出/导入功能 ---
+
+  /// 导出所有数据为 JSON 字符串
+  static Future<String> exportData() async {
+    final pets = await getPets();
+    final events = await getEvents();
+
+    final Map<String, dynamic> data = {
+      'pets': pets.map((p) => p.toJson()).toList(),
+      'events': events.map((e) => e.toJson()).toList(),
+      'version': 1,
+      'exportedAt': DateTime.now().toIso8601String(),
+    };
+
+    return jsonEncode(data);
+  }
+
+  /// 导入数据 (覆盖模式)
+  static Future<void> importData(String jsonString) async {
+    try {
+      final Map<String, dynamic> data = jsonDecode(jsonString);
+
+      if (data.containsKey('pets')) {
+        final List<dynamic> petsJson = data['pets'];
+        final pets = petsJson.map((e) => Pet.fromJson(e)).toList();
+        await savePets(pets);
+      }
+
+      if (data.containsKey('events')) {
+        final List<dynamic> eventsJson = data['events'];
+        final events = eventsJson.map((e) => CareEvent.fromJson(e)).toList();
+        await saveEvents(events);
+      }
+    } catch (e) {
+      throw Exception('数据格式错误，无法导入');
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -291,7 +330,7 @@ class PetCareApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Pet Care',
+      title: '今日萌宠',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -421,6 +460,37 @@ class _HomePageState extends State<HomePage> {
     return def.icon;
   }
 
+  /// 生成并分享今日日报文本
+  void _shareDailySummary() {
+    if (_todayEvents.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('今天还没有记录哦，快去记一笔吧！')));
+      return;
+    }
+
+    final dateStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final buffer = StringBuffer();
+    buffer.writeln('📅 $dateStr ${_currentPet.name}的日报');
+    buffer.writeln('----------------');
+
+    for (var event in _todayEvents) {
+      final timeStr = DateFormat('HH:mm').format(event.dateTime);
+      final status = event.isDone ? '✅' : '⬜';
+      buffer.writeln('$status $timeStr ${event.type.label}');
+      if (event.note.isNotEmpty) {
+        buffer.writeln('   📝 ${event.note}');
+      }
+    }
+    buffer.writeln('----------------');
+    buffer.writeln('来自「今日萌宠」App 🐾');
+
+    Clipboard.setData(ClipboardData(text: buffer.toString()));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('日报已复制到剪贴板，快去发给家人吧！')));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -433,6 +503,11 @@ class _HomePageState extends State<HomePage> {
               SliverAppBar(
                 title: const Text('今日萌宠'),
                 actions: [
+                  IconButton(
+                    icon: const Icon(Icons.share),
+                    tooltip: '分享今日日报',
+                    onPressed: _shareDailySummary,
+                  ),
                   IconButton(
                     icon: const Icon(Icons.settings_rounded),
                     onPressed: () async {
@@ -895,6 +970,115 @@ class _PetListPageState extends State<PetListPage> {
     return def.icon;
   }
 
+  // --- 数据导出/导入 UI ---
+
+  Future<void> _showExportDialog() async {
+    final jsonStr = await StorageService.exportData();
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('备份数据'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('请复制以下代码，发送给家人或保存到备忘录：'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              height: 150,
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  jsonStr,
+                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: jsonStr));
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('已复制到剪贴板')));
+              Navigator.pop(ctx);
+            },
+            child: const Text('复制全部'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showImportDialog() async {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('恢复数据'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('请粘贴备份代码（注意：这会覆盖当前所有数据）：'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: '粘贴 {"pets":...}',
+              ),
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                if (controller.text.isEmpty) return;
+                await StorageService.importData(controller.text);
+                if (mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('数据恢复成功！')));
+                  _loadPets(); // 刷新列表
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('数据格式错误，请检查')));
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('确认覆盖'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -903,57 +1087,97 @@ class _PetListPageState extends State<PetListPage> {
         child: Container(
           constraints: const BoxConstraints(maxWidth: 600),
           padding: const EdgeInsets.all(16),
-          child: ListView.builder(
-            itemCount: _pets.length,
-            itemBuilder: (context, index) {
-              final pet = _pets[index];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 16),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  leading: CircleAvatar(
-                    backgroundColor: kPastelYellow,
-                    child: Icon(_getPetIcon(pet.type), color: kDarkText),
-                  ),
-                  title: Text(
-                    pet.name,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  subtitle: Text(pet.type),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: kDarkText),
-                        onPressed: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => PetEditPage(pet: pet),
-                            ),
-                          );
-                          _loadPets();
-                        },
-                      ),
-                      if (_pets.length > 1) // 至少保留一个
-                        IconButton(
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            color: Colors.redAccent,
-                          ),
-                          onPressed: () => _showDeleteConfirm(pet.id),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _pets.length,
+                  itemBuilder: (context, index) {
+                    final pet = _pets[index];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
                         ),
-                    ],
+                        leading: CircleAvatar(
+                          backgroundColor: kPastelYellow,
+                          child: Icon(_getPetIcon(pet.type), color: kDarkText),
+                        ),
+                        title: Text(
+                          pet.name,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        subtitle: Text(pet.type),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: kDarkText),
+                              onPressed: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => PetEditPage(pet: pet),
+                                  ),
+                                );
+                                _loadPets();
+                              },
+                            ),
+                            if (_pets.length > 1) // 至少保留一个
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.redAccent,
+                                ),
+                                onPressed: () => _showDeleteConfirm(pet.id),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              // 数据管理区域
+              const Divider(),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8.0),
+                child: Text(
+                  '数据管理 (多设备同步)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
                   ),
                 ),
-              );
-            },
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _showExportDialog,
+                      icon: const Icon(Icons.upload),
+                      label: const Text('备份/导出'),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _showImportDialog,
+                      icon: const Icon(Icons.download),
+                      label: const Text('恢复/导入'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
         ),
       ),

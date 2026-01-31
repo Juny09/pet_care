@@ -1,11 +1,11 @@
 {
-    "name": "pet_care_app",
-    "short_name": "pet_care_app",
+    "name": "今日萌宠",
+    "short_name": "今日萌宠",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FFFDE7",
+    "theme_color": "#FFAB91",
+    "description": "记录毛孩子生活的每一天",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
