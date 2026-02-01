@@ -689,6 +689,7 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   bool _showLogin = false;
+  bool _showPasswordReset = false;
 
   @override
   void initState() {
@@ -698,7 +699,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
     // 监听 Auth 状态变化
     if (CloudService.isEnabled) {
       Supabase.instance.client.auth.onAuthStateChange.listen((data) {
-        _checkAuth();
+        if (data.event == AuthChangeEvent.passwordRecovery) {
+          setState(() {
+            _showPasswordReset = true;
+          });
+        } else {
+          _checkAuth();
+        }
       });
     }
   }
@@ -711,12 +718,18 @@ class _AuthWrapperState extends State<AuthWrapper> {
         // 云端模式，检查是否有用户
         final user = Supabase.instance.client.auth.currentUser;
         _showLogin = user == null;
+        if (user == null) {
+          _showPasswordReset = false;
+        }
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_showPasswordReset) {
+      return const PasswordResetPage();
+    }
     if (_showLogin) {
       return const LoginPage();
     }
