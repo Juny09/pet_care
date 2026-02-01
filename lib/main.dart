@@ -755,6 +755,7 @@ class _HomePageState extends State<HomePage> {
   List<Pet> _pets = [];
   String _currentPetId = '';
   List<CareEvent> _todayEvents = [];
+  bool _expandCompleted = false; // 控制是否展开已完成事项
 
   @override
   void initState() {
@@ -821,26 +822,45 @@ class _HomePageState extends State<HomePage> {
 
     final allEvents = await StorageService.getEvents();
 
-    // 筛选今日事项 & 当前宠物
-    final now = DateTime.now();
-    final todayEvents = allEvents.where((e) {
-      final isToday =
-          e.dateTime.year == now.year &&
-          e.dateTime.month == now.month &&
-          e.dateTime.day == now.day;
+    // 获取历史设置
+    final prefs = await SharedPreferences.getInstance();
+    final int historyDays = prefs.getInt('kCompletedHistoryDays') ?? 1;
 
+    // 筛选事项 & 当前宠物
+    final now = DateTime.now();
+    // 计算历史截止日期 (今天 - historyDays + 1)
+    // 比如 historyDays=1，截止日期就是今天0点
+    // historyDays=3，截止日期就是前天0点
+    final historyCutoff = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: historyDays - 1));
+
+    // 今日0点，用于区分"未完成"任务是否过期
+    final todayStart = DateTime(now.year, now.month, now.day);
+
+    final todayEvents = allEvents.where((e) {
       // 兼容旧数据：如果 event.petId 为空，且当前是第一个宠物，也显示
       final isCurrentPet =
           e.petId == currentId ||
           (e.petId.isEmpty && currentId == pets.first.id);
 
-      return isToday && isCurrentPet;
+      if (!isCurrentPet) return false;
+
+      // 如果未完成：显示所有（包括过期未完成的）
+      if (!e.isDone) return true;
+
+      // 如果已完成：根据设置显示最近几天的
+      // e.dateTime 必须 >= historyCutoff
+      return e.dateTime.isAfter(historyCutoff) ||
+          e.dateTime.isAtSameMomentAs(historyCutoff);
     }).toList();
 
     // 排序
     todayEvents.sort((a, b) {
       if (a.isDone != b.isDone) {
-        return a.isDone ? 1 : -1;
+        return a.isDone ? 1 : -1; // 未完成在前
       }
       return a.dateTime.compareTo(b.dateTime);
     });
@@ -1406,6 +1426,62 @@ class _HomePageState extends State<HomePage> {
       },
       onDismissed: (direction) => _deleteEvent(event),
       child: GestureDetector(
+        onLongPress: () async {
+          // 长按显示删除菜单
+          final result = await showMenu<String>(
+            context: context,
+            position: RelativeRect.fromLTRB(
+              MediaQuery.of(context).size.width, // Right
+              0, // Top (will be adjusted)
+              0,
+              0,
+            ),
+            items: [
+              const PopupMenuItem(value: 'edit', child: Text('编辑')),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Text('删除', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          );
+          if (result == 'delete') {
+            // Confirm delete
+            if (mounted) {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('确认删除?'),
+                  content: const Text('删除后无法恢复。'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('取消'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text(
+                        '删除',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true) {
+                _deleteEvent(event);
+              }
+            }
+          } else if (result == 'edit') {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) =>
+                    AddEventPage(petId: event.petId, eventToEdit: event),
+              ),
+            );
+            _loadData();
+          }
+        },
         onTap: () async {
           // 点击进入编辑页
           await Navigator.push(

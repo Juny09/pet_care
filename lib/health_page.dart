@@ -7,6 +7,7 @@ import 'notification_service.dart';
 enum HealthType {
   vaccine, // 疫苗
   deworming, // 驱虫
+  other, // 其他
 }
 
 extension HealthTypeExtension on HealthType {
@@ -16,6 +17,8 @@ extension HealthTypeExtension on HealthType {
         return '疫苗';
       case HealthType.deworming:
         return '驱虫';
+      case HealthType.other:
+        return '其他';
     }
   }
 
@@ -25,6 +28,8 @@ extension HealthTypeExtension on HealthType {
         return Icons.medical_services;
       case HealthType.deworming:
         return Icons.bug_report_outlined;
+      case HealthType.other:
+        return Icons.healing;
     }
   }
 
@@ -34,6 +39,8 @@ extension HealthTypeExtension on HealthType {
         return Colors.blueAccent;
       case HealthType.deworming:
         return Colors.orangeAccent;
+      case HealthType.other:
+        return Colors.purpleAccent;
     }
   }
 }
