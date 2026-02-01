@@ -290,6 +290,9 @@ class StorageService {
         // 全量同步策略：upsert
         for (var pet in pets) {
           final data = pet.toJson();
+          // 临时移除 iconCodePoint，防止因数据库缺少该列导致报错
+          // 待数据库添加 column "iconCodePoint" 后可移除此行
+          data.remove('iconCodePoint');
           data['family_id'] = CloudService.currentFamilyId; // 关联到家庭
           await CloudService.client!.from('pets').upsert(data);
         }
