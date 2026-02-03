@@ -16,26 +16,40 @@
 
 ---
 
-## 2. Web 部署 (最简单)
+## 2. Web 部署 (最简单 - Vercel 自动化部署)
 
-推荐使用 Vercel 或 Netlify，它们对 Flutter Web 支持很好且免费。
+推荐使用 Vercel，我已经为你配置好了自动化构建脚本。
 
-### 步骤：
+### 方法 A：通过 Git 自动部署 (推荐)
+
+1.  **将代码推送到 GitHub** (已完成)。
+2.  **登录 Vercel**：
+    *   访问 [Vercel](https://vercel.com) 并使用 GitHub 账号登录。
+3.  **导入项目**：
+    *   点击 **"Add New..."** -> **"Project"**。
+    *   找到 `pet_care` 仓库，点击 **"Import"**。
+4.  **配置构建 (非常简单)**：
+    *   由于我已经配置了 `vercel.json`，Vercel 应该能自动识别。
+    *   如果没有自动识别，请确保：
+        *   **Framework Preset**: 选择 `Other`。
+        *   **Build Command**: `bash build_web.sh`
+        *   **Output Directory**: `build/web`
+5.  **点击 Deploy**：
+    *   等待几分钟，部署完成后你会获得一个访问链接。
+6.  **配置 Supabase**：
+    *   将获得的 Vercel 域名添加到 Supabase 的 **Redirect URLs** 中。
+
+### 方法 B：本地构建手动部署
+
 1.  **构建 Web 版本**：
-    在终端运行：
     ```bash
-    flutter build web --release --no-tree-shake-icons
+    bash build_web.sh
     ```
-    *注意：如果遇到 Icon 报错，必须加上 `--no-tree-shake-icons` 参数。*
-    构建产物在 `build/web` 目录下。
-
-2.  **部署到 Vercel (推荐)**：
-    *   注册/登录 [Vercel](https://vercel.com)。
-    *   安装 Vercel CLI: `npm i -g vercel` (或直接在网页上传)。
-    *   在项目根目录运行 `vercel`。
-    *   一路回车，Vercel 会自动检测并部署。
-    *   部署完成后，Vercel 会给你一个域名 (例如 `pet-care-app.vercel.app`)。
-    *   **关键**：把这个域名添加到 Supabase 的 **Redirect URLs** 中。
+2.  **安装 Vercel CLI 并部署**：
+    ```bash
+    npm i -g vercel
+    vercel deploy build/web
+    ```
 
 ---
 
