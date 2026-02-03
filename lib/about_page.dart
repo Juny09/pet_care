@@ -37,13 +37,6 @@ class _AboutPageState extends State<AboutPage> {
     // 或者我们可以使用 EventBus 或 Provider，但为了简单，我们在 Main.dart 的 onResume 或 loadData 中处理
   }
 
-  Future<void> _launchUrl(String urlString) async {
-    final url = Uri.parse(urlString);
-    if (!await launchUrl(url)) {
-      debugPrint('Could not launch $urlString');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(

@@ -837,9 +837,6 @@ class _HomePageState extends State<HomePage> {
       now.day,
     ).subtract(Duration(days: historyDays - 1));
 
-    // 今日0点，用于区分"未完成"任务是否过期
-    final todayStart = DateTime(now.year, now.month, now.day);
-
     final todayEvents = allEvents.where((e) {
       // 兼容旧数据：如果 event.petId 为空，且当前是第一个宠物，也显示
       final isCurrentPet =
@@ -1970,17 +1967,6 @@ class _PetListPageState extends State<PetListPage> {
   }
 
   // --- 数据导出/导入 UI ---
-
-  Future<void> _checkUpdate() async {
-    final url = Uri.parse('https://github.com/Juny09/pet_care/releases');
-    if (!await launchUrl(url)) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('无法打开更新页面')));
-      }
-    }
-  }
 
   Future<void> _showExportDialog() async {
     final jsonStr = await StorageService.exportData();

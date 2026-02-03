@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'gmail_service.dart';
 import 'main.dart'; // 为了使用 kPrimaryColor 等常量
 
 class LoginPage extends StatefulWidget {
@@ -58,10 +60,10 @@ class _LoginPageState extends State<LoginPage> {
         } else if (message.contains('Invalid login credentials')) {
           message = '邮箱或密码错误';
         } else if (message.contains('User already registered')) {
-           message = '该邮箱已被注册';
-         } else if (message.contains('Error sending confirmation email')) {
-           message = '发送验证邮件失败，请检查服务器配置或稍后再试';
-         }
+          message = '该邮箱已被注册';
+        } else if (message.contains('Error sending confirmation email')) {
+          message = '发送验证邮件失败，请检查服务器配置或稍后再试';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message), backgroundColor: Colors.red),
         );
@@ -119,9 +121,20 @@ class _LoginPageState extends State<LoginPage> {
     if (email == null || email.isEmpty) return;
 
     try {
+      // 如果是 Web 端，使用当前页面的 URL
+      // 如果是 Mobile/Desktop，使用 Deep Link
+      String? redirectTo;
+      if (kIsWeb) {
+        // 获取当前 URL 的 origin (e.g., http://localhost:8080)
+        // 确保 Supabase 后台 Redirect URLs 包含此 URL
+        redirectTo = Uri.base.origin;
+      } else {
+        redirectTo = 'io.supabase.petcare://login-callback/';
+      }
+
       await Supabase.instance.client.auth.resetPasswordForEmail(
         email,
-        redirectTo: 'io.supabase.petcare://login-callback/',
+        redirectTo: redirectTo,
       );
       if (mounted) {
         ScaffoldMessenger.of(
@@ -130,9 +143,40 @@ class _LoginPageState extends State<LoginPage> {
       }
     } on AuthException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
-        );
+        String message = e.message;
+        bool isRateLimit = false;
+
+        if (message.contains('email rate limit exceeded') ||
+            message.contains('429')) {
+          message = '邮件发送过于频繁，是否切换到 Gmail 联系客服重置？';
+          isRateLimit = true;
+        } else if (message.contains('Invalid login credentials')) {
+          message = '邮箱或密码错误';
+        } else if (message.contains('User already registered')) {
+          message = '该邮箱已被注册';
+        } else if (message.contains('Error sending confirmation email')) {
+          message = '发送验证邮件失败，请检查服务器配置或稍后再试';
+        }
+
+        if (isRateLimit) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: '去联系',
+                onPressed: () {
+                  GmailService.launchGmailFallback(email: email);
+                },
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message), backgroundColor: Colors.red),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
