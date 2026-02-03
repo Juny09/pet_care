@@ -112,14 +112,8 @@ class _FamilyManagementPageState extends State<FamilyManagementPage> {
                             },
                           ),
                     onTap: () {
-                      // Switch context or show detail
-                      // For now, just copy ID if not personal
-                      if (!isPersonal) {
-                        Clipboard.setData(ClipboardData(text: h['id']));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('家庭 ID 已复制')),
-                        );
-                      }
+                      // Return selected household info
+                      Navigator.pop(context, {'id': h['id'], 'name': h['name']});
                     },
                   ),
                 );

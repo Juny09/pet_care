@@ -858,14 +858,15 @@ class _HomePageState extends State<HomePage> {
   // --- 家庭/群组管理 ---
 
   void _showFamilyManagement() async {
-    final selectedId = await Navigator.push<String>(
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const FamilyManagementPage()),
     );
 
-    if (selectedId != null) {
+    if (result != null && result is Map) {
       setState(() {
-        _currentHouseholdId = selectedId;
+        _currentHouseholdId = result['id'];
+        _currentHouseholdName = result['name'];
       });
       _loadPets(); // Reload pets with new householdId
     }
@@ -1074,6 +1075,15 @@ class _HomePageState extends State<HomePage> {
               slivers: [
                 const SliverToBoxAdapter(child: SizedBox(height: 110)),
 
+                // 0. 用户/家庭信息卡片
+                if (CloudService.isEnabled)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: _buildUserInfoCard(),
+                    ),
+                  ),
+
                 // 1. 今日概览卡片
                 SliverToBoxAdapter(
                   child: Padding(
@@ -1164,6 +1174,70 @@ class _HomePageState extends State<HomePage> {
         },
         icon: const Icon(Icons.add),
         label: const Text('记一笔'),
+      ),
+    );
+  }
+
+  Widget _buildUserInfoCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: kPrimaryColor.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: kPrimaryColor.withValues(alpha: 0.2),
+            radius: 24,
+            child: const Icon(Icons.home_rounded, color: kPrimaryColor),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '当前空间',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                Text(
+                  _currentHouseholdName,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: kDarkText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (CloudService.isEnabled)
+            ElevatedButton.icon(
+              onPressed: _showFamilyManagement,
+              icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+              label: const Text('管理/切换'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kPastelYellow,
+                foregroundColor: kDarkText,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
