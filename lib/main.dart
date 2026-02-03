@@ -9,6 +9,7 @@ import 'cloud_service.dart';
 import 'notification_service.dart';
 import 'login_page.dart';
 import 'password_reset_page.dart';
+import 'update_service.dart';
 
 import 'activity_log_page.dart';
 import 'growth_page.dart';
@@ -761,6 +762,10 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _loadData();
+    // 启动时检查更新
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateService.checkUpdate(context, silent: true);
+    });
     _initRealtimeSubscription();
   }
 
