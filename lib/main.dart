@@ -1052,7 +1052,7 @@ class _HomePageState extends State<HomePage> {
             onPressed: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const PetListPage()),
+                MaterialPageRoute(builder: (context) => const AboutPage()),
               );
               _loadData();
             },
