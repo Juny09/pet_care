@@ -2628,6 +2628,7 @@ class _PetEditPageState extends State<PetEditPage> {
   // 新增：家庭选择逻辑
   String? _selectedHouseholdId;
   List<Map<String, dynamic>> _myHouseholds = [];
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -2661,62 +2662,74 @@ class _PetEditPageState extends State<PetEditPage> {
 
   Future<void> _save() async {
     if (_nameController.text.isEmpty) return;
+    if (_isSaving) return;
 
-    // ... (类型和图标逻辑不变)
+    setState(() => _isSaving = true);
 
-    // 确定最终类型
-    String finalType = _selectedType;
-    if (_isOtherType && _customTypeController.text.isNotEmpty) {
-      finalType = _customTypeController.text;
-    }
+    try {
+      // ... (类型和图标逻辑不变)
 
-    int? finalIconCodePoint = _selectedIconCodePoint;
-    if (!_isOtherType) {
-      finalIconCodePoint = null;
-    } else if (finalIconCodePoint == null) {
-      finalIconCodePoint = Icons.star.codePoint;
-    }
-
-    // 获取选中的家庭 ID
-    final targetFamilyId = _selectedHouseholdId ?? CloudService.currentUserId;
-
-    if (widget.pet != null) {
-      // Update
-      final updatedPet = Pet(
-        id: widget.pet!.id,
-        name: _nameController.text,
-        type: finalType,
-        iconCodePoint: finalIconCodePoint,
-      );
-      await StorageService.updatePet(updatedPet);
-
-      // 如果家庭变了，需要移动 (Cloud only)
-      if (CloudService.isEnabled) {
-        // 注意：这里我们无法知道旧的 familyId，因为 Pet 模型没存。
-        // 但 updatePet 通常只更新基本信息。
-        // 我们额外调用 movePet
-        await CloudService.movePet(updatedPet.id, targetFamilyId);
+      // 确定最终类型
+      String finalType = _selectedType;
+      if (_isOtherType && _customTypeController.text.isNotEmpty) {
+        finalType = _customTypeController.text;
       }
-    } else {
-      // Add
-      final newPet = Pet(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        name: _nameController.text,
-        type: finalType,
-        iconCodePoint: finalIconCodePoint,
-      );
-      // StorageService.addPet 需要修改以支持传入 familyId，或者我们在 addPet 内部处理
-      // 目前 addPet 默认使用 CloudService.currentFamilyId (即 CloudService.currentUserId)
-      // 我们需要一种方式告诉 addPet 使用哪个 familyId
 
-      // 临时方案：先添加，再移动
-      await StorageService.addPet(newPet);
-      if (CloudService.isEnabled) {
-        await CloudService.movePet(newPet.id, targetFamilyId);
+      int? finalIconCodePoint = _selectedIconCodePoint;
+      if (!_isOtherType) {
+        finalIconCodePoint = null;
+      } else if (finalIconCodePoint == null) {
+        finalIconCodePoint = Icons.star.codePoint;
       }
-    }
 
-    if (mounted) Navigator.pop(context);
+      // 获取选中的家庭 ID
+      final targetFamilyId = _selectedHouseholdId ?? CloudService.currentUserId;
+
+      if (widget.pet != null) {
+        // Update
+        final updatedPet = Pet(
+          id: widget.pet!.id,
+          name: _nameController.text,
+          type: finalType,
+          iconCodePoint: finalIconCodePoint,
+        );
+        await StorageService.updatePet(updatedPet);
+
+        // 如果家庭变了，需要移动 (Cloud only)
+        if (CloudService.isEnabled) {
+          // 注意：这里我们无法知道旧的 familyId，因为 Pet 模型没存。
+          // 但 updatePet 通常只更新基本信息。
+          // 我们额外调用 movePet
+          await CloudService.movePet(updatedPet.id, targetFamilyId);
+        }
+      } else {
+        // Add
+        final newPet = Pet(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          name: _nameController.text,
+          type: finalType,
+          iconCodePoint: finalIconCodePoint,
+        );
+
+        // 临时方案：先添加，再移动
+        await StorageService.addPet(newPet);
+        if (CloudService.isEnabled) {
+          await CloudService.movePet(newPet.id, targetFamilyId);
+        }
+      }
+
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('保存失败: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override
@@ -2803,7 +2816,7 @@ class _PetEditPageState extends State<PetEditPage> {
                 SizedBox(
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: _save,
+                    onPressed: _isSaving ? null : _save,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: kPrimaryColor,
                       foregroundColor: Colors.white,
@@ -2811,7 +2824,16 @@ class _PetEditPageState extends State<PetEditPage> {
                         borderRadius: BorderRadius.circular(28),
                       ),
                     ),
-                    child: const Text('保 存', style: TextStyle(fontSize: 18)),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text('保 存', style: TextStyle(fontSize: 18)),
                   ),
                 ),
               ],
