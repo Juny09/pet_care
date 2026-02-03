@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 云端服务类 (封装 Supabase)
+import 'main.dart'; // Import Pet model
+
 class CloudService {
   static const String kSupabaseUrlKey = 'supabase_url';
   static const String kSupabaseAnonKeyKey = 'supabase_key';
@@ -232,6 +234,41 @@ class CloudService {
     await removeMember(householdId, currentUserId);
   }
 
+  /// 获取宠物列表 (支持家庭 ID)
+  static Future<List<Pet>> getPets({String? householdId}) async {
+    if (!isEnabled) return [];
+    try {
+      // 如果没有指定家庭，默认查询个人空间 (family_id = user_id)
+      final targetFamilyId = householdId ?? currentUserId;
+
+      final response = await _client!
+          .from('pets')
+          .select()
+          .eq('family_id', targetFamilyId); // 只查询特定家庭的宠物
+
+      return (response as List).map((e) => Pet.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint('Get pets error: $e');
+      return [];
+    }
+  }
+
+  /// 添加宠物 (支持家庭 ID)
+  static Future<void> addPet(Pet pet, {String? householdId}) async {
+    if (!isEnabled) return;
+    try {
+      final targetFamilyId = householdId ?? currentUserId;
+
+      await _client!.from('pets').insert({
+        ...pet.toJson(),
+        'family_id': targetFamilyId, // 绑定到指定家庭
+      });
+    } catch (e) {
+      debugPrint('Add pet error: $e');
+      rethrow;
+    }
+  }
+
   /// 移动宠物到另一个家庭 (修改 family_id)
   static Future<void> movePet(String petId, String targetFamilyId) async {
     if (!isEnabled) return;
@@ -266,14 +303,6 @@ class CloudService {
       debugPrint('Join family error: $e');
       rethrow;
     }
-  }
-
-  /// 退出家庭 (重置为自己的 ID)
-  static Future<void> leaveFamily() async {
-    if (_client == null) return;
-    final user = _client!.auth.currentUser;
-    if (user == null) return;
-    await joinFamily(user.id);
   }
 
   /// 记录活动日志

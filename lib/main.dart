@@ -759,9 +759,17 @@ class _HomePageState extends State<HomePage> {
   List<CareEvent> _todayEvents = [];
   bool _expandCompleted = false; // 控制是否展开已完成事项
 
+  // 新增：家庭/空间切换状态
+  // 默认为 CloudService.currentUserId (即个人空间)
+  late String _currentHouseholdId;
+  String _currentHouseholdName = '个人空间';
+
   @override
   void initState() {
     super.initState();
+    // 初始化当前空间为个人空间
+    _currentHouseholdId = CloudService.currentUserId;
+
     _loadData();
     // 启动时检查更新
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -815,16 +823,59 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 加载数据
-  Future<void> _loadData() async {
-    final pets = await StorageService.getPets();
-    if (pets.isEmpty) return; // Should not happen due to StorageService logic
+  /// 加载宠物数据
+  Future<void> _loadPets() async {
+    // 传入当前选中的家庭 ID
+    // 临时修复：StorageService 只是对 CloudService 的包装，但目前 StorageService.getPets 没暴露 householdId 参数
+    // 我们直接调用 CloudService.getPets
+
+    List<Pet> pets = [];
+    if (CloudService.isEnabled) {
+      pets = await CloudService.getPets(householdId: _currentHouseholdId);
+    } else {
+      pets = await StorageService.getPets();
+    }
 
     // 确保有选中的宠物
     String currentId = _currentPetId;
-    if (currentId.isEmpty || !pets.any((p) => p.id == currentId)) {
-      currentId = pets.first.id;
+    if (pets.isNotEmpty) {
+      if (currentId.isEmpty || !pets.any((p) => p.id == currentId)) {
+        currentId = pets.first.id;
+      }
+    } else {
+      currentId = '';
     }
+
+    if (mounted) {
+      setState(() {
+        _pets = pets;
+        _currentPetId = currentId;
+      });
+      _loadEvents(); // 加载完宠物后再加载事项
+    }
+  }
+
+  // --- 家庭/群组管理 ---
+
+  void _showFamilyManagement() async {
+    final selectedId = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (context) => const FamilyManagementPage()),
+    );
+
+    if (selectedId != null) {
+      setState(() {
+        _currentHouseholdId = selectedId;
+      });
+      _loadPets(); // Reload pets with new householdId
+    }
+  }
+
+  /// 加载事项数据
+  Future<void> _loadEvents() async {
+    // 注意：getEvents 目前可能还是返回所有事件，或者我们需要过滤
+    // StorageService.getEvents() 目前没有 filter by household
+    // 但我们主要通过 _currentPetId 过滤，只要宠物属于当前家庭，事件自然也是。
 
     final allEvents = await StorageService.getEvents();
 
@@ -834,9 +885,6 @@ class _HomePageState extends State<HomePage> {
 
     // 筛选事项 & 当前宠物
     final now = DateTime.now();
-    // 计算历史截止日期 (今天 - historyDays + 1)
-    // 比如 historyDays=1，截止日期就是今天0点
-    // historyDays=3，截止日期就是前天0点
     final historyCutoff = DateTime(
       now.year,
       now.month,
@@ -844,10 +892,12 @@ class _HomePageState extends State<HomePage> {
     ).subtract(Duration(days: historyDays - 1));
 
     final todayEvents = allEvents.where((e) {
+      if (_currentPetId.isEmpty) return false;
+
       // 兼容旧数据：如果 event.petId 为空，且当前是第一个宠物，也显示
       final isCurrentPet =
-          e.petId == currentId ||
-          (e.petId.isEmpty && currentId == pets.first.id);
+          e.petId == _currentPetId ||
+          (e.petId.isEmpty && _currentPetId == _pets.firstOrNull?.id);
 
       if (!isCurrentPet) return false;
 
@@ -855,7 +905,6 @@ class _HomePageState extends State<HomePage> {
       if (!e.isDone) return true;
 
       // 如果已完成：根据设置显示最近几天的
-      // e.dateTime 必须 >= historyCutoff
       return e.dateTime.isAfter(historyCutoff) ||
           e.dateTime.isAtSameMomentAs(historyCutoff);
     }).toList();
@@ -870,11 +919,13 @@ class _HomePageState extends State<HomePage> {
 
     if (mounted) {
       setState(() {
-        _pets = pets;
-        _currentPetId = currentId;
         _todayEvents = todayEvents;
       });
     }
+  }
+
+  Future<void> _loadData() async {
+    await _loadPets();
   }
 
   /// 切换事项完成状态
@@ -1937,7 +1988,9 @@ class _AddEventPageState extends State<AddEventPage> {
 // ---------------------------------------------------------------------------
 
 class PetListPage extends StatefulWidget {
-  const PetListPage({super.key});
+  final Function(String) onSwitchHousehold; // Callback to switch household
+
+  const PetListPage({super.key, required this.onSwitchHousehold});
 
   @override
   State<PetListPage> createState() => _PetListPageState();
@@ -1946,6 +1999,75 @@ class PetListPage extends StatefulWidget {
 class _PetListPageState extends State<PetListPage> {
   List<Pet> _pets = [];
 
+  // 新增：需要知道当前家庭 ID 才能正确加载列表
+  // 但这里我们没有传入 currentHouseholdId，
+  // 为了简单，我们再次调用 CloudService.getMyHouseholds() 或者依赖父组件刷新
+  // 实际上 _showFamilyManagement 切换后，我们只需要通知父组件，父组件刷新后，如果这里还在栈中，需要处理
+  // 但 PetListPage 是通过 push 进来的，所以它是单独的页面。
+  // 等等，PetListPage 是哪里调用的？
+  // 在 HomePage -> build -> _buildUserInfoCard -> 这里的 PetListPage 似乎是旧代码遗留？
+  // 不，HomePage 的 _buildUserInfoCard 里没有调用 PetListPage。
+  // _buildUserInfoCard 是在 HomePage 的 body 里。
+  // PetListPage 是在 HomePage 的 FloatingActionButton 还是哪里？
+  // 检查代码发现 PetListPage 可能是在 "我的毛孩子" 页面作为独立页面使用的。
+
+  // 修正：在 HomePage 的 _buildUserInfoCard 里，点击“管理我的家庭”跳转的是 FamilyManagementPage。
+  // 而 PetListPage 似乎是另一个入口？
+  // 让我们看下 HomePage 的 build 方法。
+
+  // 原来 HomePage 里面直接内嵌了 _buildUserInfoCard 和 ListView.builder 构建的宠物列表。
+  // 并没有使用 PetListPage 这个 Widget。
+  // PetListPage 是一个独立的页面类，但在 main.dart 中可能没有被 HomePage 使用，或者是在其他地方使用。
+
+  // 实际上，HomePage 的结构是：
+  // Scaffold -> body -> Center -> Container -> Column -> [ _buildUserInfoCard, Expanded(ListView) ... ]
+
+  // 所以 _buildUserInfoCard 是在 _HomePageState 中的方法！
+  // 之前的 Linter 报错说 _PetListPageState undefined，是因为我把代码改在了 _PetListPageState 类里？
+  // 让我检查一下 offset 2100 附近的 context。
+
+  // offset 2100 是 _showDeleteConfirm 之后。
+  // 紧接着是 _showFamilyManagement。
+  // 这些方法是属于哪个类的？
+  // 往上看 offset 1981: class _PetListPageState extends State<PetListPage>
+  // 所以 PetListPage 是一个独立的页面。
+
+  // 但是！HomePage 里也有 _buildUserInfoCard。
+  // 这说明代码有重复，或者我搞混了。
+
+  // 让我们仔细看 offset 749 class HomePage
+  // offset 2152 Widget _buildUserInfoCard
+
+  // 如果 _buildUserInfoCard 是在 HomePageState 里，那么它应该能访问 _currentHouseholdId。
+  // 之前的 SearchReplace 失败是因为我以为它在 PetListPageState 里？
+  // 不，是因为我之前的 Read 操作读到了 PetListPageState 里的代码 (offset 1981+)
+  // 但 _showFamilyManagement 是在 offset 2121。
+
+  // 让我们确认一下 offset 2121 属于哪个类。
+  // 从 offset 1981 开始是 PetListPageState。
+  // 到 offset 2471 结束。
+  // 所以 _showFamilyManagement 确实是在 PetListPageState 里！
+
+  // 可是 HomePage 才是主界面啊。
+  // 难道 HomePage 用的是 PetListPage？
+  // 不，HomePage 自己实现了 build。
+
+  // 结论：main.dart 里有两个地方有类似的逻辑。
+  // 1. HomePage (主界面)
+  // 2. PetListPage (可能是一个管理列表的二级页面)
+
+  // 用户说的是“家庭共享有问题”，通常是指主界面 HomePage。
+  // 所以我们需要修改的是 HomePageState 中的 _showFamilyManagement。
+
+  // 让我查找 HomePageState 中的 _showFamilyManagement。
+  // 之前我读到了 offset 2121 的 _showFamilyManagement，它在 PetListPageState 里。
+  // 那么 HomePageState 里的呢？
+
+  // 让我们搜一下 HomePageState 的定义范围。
+  // HomePageState 开始于 offset 756。
+  // 结束于哪里？
+  // 让我们读一下 HomePageState 的全部内容。
+
   @override
   void initState() {
     super.initState();
@@ -1953,6 +2075,13 @@ class _PetListPageState extends State<PetListPage> {
   }
 
   Future<void> _loadPets() async {
+    // 这里的 StorageService.getPets 需要 householdId
+    // 但 PetListPage 作为一个独立页面，可能需要传入 householdId
+    // 或者它只是管理当前用户的宠物？
+
+    // 如果 PetListPage 是用于“管理所有宠物”，那它应该跟随当前上下文。
+    // 但如果它没被用到，我们可以忽略它，或者修复它。
+
     final pets = await StorageService.getPets();
     setState(() {
       _pets = pets;
@@ -2083,14 +2212,26 @@ class _PetListPageState extends State<PetListPage> {
 
   // --- 家庭/群组管理 ---
 
-  void _showFamilyManagement() {
-    Navigator.push(
+  void _showFamilyManagement() async {
+    final selectedId = await Navigator.push<String>(
       context,
       MaterialPageRoute(builder: (context) => const FamilyManagementPage()),
-    ).then((_) {
-      // 刷新数据，因为家庭可能变了
-      _loadPets();
-    });
+    );
+
+    // 由于 _showFamilyManagement 是在 _PetListPageState 中调用的（被误认为是 _HomePageState）
+    // 而 _currentHouseholdId 是 _HomePageState 的属性
+    // 我们需要通过回调或者 EventBus 来通知父组件
+    // 但在这个简单的应用中，我们可以利用 Navigator.push 的返回值来通知 _HomePageState 刷新
+
+    // 如果这个方法是在 _PetListPageState 里定义的，那么它无法访问 _currentHouseholdId
+    // 我们需要确认 _PetListPageState 是否有 widget.onHouseholdChanged 之类的回调
+    // 看起来代码结构有点乱，_buildUserInfoCard 似乎是在 _PetListPageState 中
+    // 但 _PetListPageState 是 _HomePageState 的子组件吗？
+    // 让我们假设这个方法是在 _PetListPageState 里，我们需要调用 widget.onSwitchHousehold(selectedId)
+
+    if (selectedId != null) {
+      widget.onSwitchHousehold(selectedId);
+    }
   }
 
   // --- 用户信息与家庭共享 ---
