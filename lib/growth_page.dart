@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:typed_data'; // Add this for Uint8List
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'cloud_service.dart';
 import 'main.dart'; // Import models and storage service
 
 class GrowthPage extends StatefulWidget {
@@ -15,7 +17,8 @@ class GrowthPage extends StatefulWidget {
   State<GrowthPage> createState() => _GrowthPageState();
 }
 
-class _GrowthPageState extends State<GrowthPage> with SingleTickerProviderStateMixin {
+class _GrowthPageState extends State<GrowthPage>
+    with SingleTickerProviderStateMixin {
   List<GrowthRecord> _records = [];
   late TabController _tabController;
 
@@ -106,18 +109,27 @@ class _GrowthPageState extends State<GrowthPage> with SingleTickerProviderStateM
   }
 
   Widget _buildPhotoGrid() {
-    final photoRecords = _records.where((r) => r.photoPath != null && r.photoPath!.isNotEmpty).toList();
+    final photoRecords = _records
+        .where((r) => r.photoPath != null && r.photoPath!.isNotEmpty)
+        .toList();
 
     if (photoRecords.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.photo_library_outlined, size: 80, color: kPrimaryColor.withValues(alpha: 0.3)),
+            Icon(
+              Icons.photo_library_outlined,
+              size: 80,
+              color: kPrimaryColor.withValues(alpha: 0.3),
+            ),
             const SizedBox(height: 16),
             Text(
               '还没有照片哦',
-              style: TextStyle(color: kDarkText.withValues(alpha: 0.5), fontSize: 16),
+              style: TextStyle(
+                color: kDarkText.withValues(alpha: 0.5),
+                fontSize: 16,
+              ),
             ),
           ],
         ),
@@ -155,8 +167,8 @@ class _GrowthPageState extends State<GrowthPage> with SingleTickerProviderStateM
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Image.file(
-                    File(record.photoPath!),
+                  Image.network(
+                    record.photoPath!,
                     fit: BoxFit.cover,
                     errorBuilder: (ctx, err, stack) => Container(
                       color: Colors.grey[200],
@@ -203,16 +215,26 @@ class _GrowthPageState extends State<GrowthPage> with SingleTickerProviderStateM
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.monitor_weight_outlined, size: 80, color: kPrimaryColor.withValues(alpha: 0.3)),
+          Icon(
+            Icons.monitor_weight_outlined,
+            size: 80,
+            color: kPrimaryColor.withValues(alpha: 0.3),
+          ),
           const SizedBox(height: 16),
           Text(
             '还没有成长记录哦',
-            style: TextStyle(color: kDarkText.withValues(alpha: 0.5), fontSize: 16),
+            style: TextStyle(
+              color: kDarkText.withValues(alpha: 0.5),
+              fontSize: 16,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             '快来记录${widget.pet.name}的每一次变化吧！',
-            style: TextStyle(color: kDarkText.withValues(alpha: 0.5), fontSize: 14),
+            style: TextStyle(
+              color: kDarkText.withValues(alpha: 0.5),
+              fontSize: 14,
+            ),
           ),
         ],
       ),
@@ -279,7 +301,7 @@ class _GrowthPageState extends State<GrowthPage> with SingleTickerProviderStateM
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
                 image: DecorationImage(
-                  image: FileImage(File(record.photoPath!)),
+                  image: NetworkImage(record.photoPath!),
                   fit: BoxFit.cover,
                 ),
               ),
@@ -301,7 +323,10 @@ class _GrowthPageState extends State<GrowthPage> with SingleTickerProviderStateM
                     const SizedBox(width: 8),
                     if (change != null)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: change > 0
                               ? Colors.red.withValues(alpha: 0.1)
@@ -311,7 +336,9 @@ class _GrowthPageState extends State<GrowthPage> with SingleTickerProviderStateM
                         child: Row(
                           children: [
                             Icon(
-                              change > 0 ? Icons.arrow_upward : Icons.arrow_downward,
+                              change > 0
+                                  ? Icons.arrow_upward
+                                  : Icons.arrow_downward,
                               size: 12,
                               color: change > 0 ? Colors.red : Colors.green,
                             ),
@@ -340,7 +367,10 @@ class _GrowthPageState extends State<GrowthPage> with SingleTickerProviderStateM
             ),
           ),
           IconButton(
-            icon: Icon(Icons.delete_outline, color: kDarkText.withValues(alpha: 0.3)),
+            icon: Icon(
+              Icons.delete_outline,
+              color: kDarkText.withValues(alpha: 0.3),
+            ),
             onPressed: () => _deleteRecord(record),
           ),
         ],
@@ -355,7 +385,10 @@ class _GrowthPageState extends State<GrowthPage> with SingleTickerProviderStateM
         title: const Text('确认删除?'),
         content: const Text('删除后无法恢复。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('删除', style: TextStyle(color: Colors.red)),
@@ -383,28 +416,48 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
+  // Use Uint8List for web/cross-platform image data
+  Uint8List? _photoBytes;
+  String? _photoName;
+  // Local path for mobile preview (optional, but bytes are better for cross-platform)
   String? _photoPath;
+
   final ImagePicker _picker = ImagePicker();
 
   Future<void> _pickImage() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      // Save image to app directory
-      final directory = await getApplicationDocumentsDirectory();
-      final String fileName = '${DateTime.now().millisecondsSinceEpoch}_${path.basename(image.path)}';
-      final String savedPath = path.join(directory.path, fileName);
-      await image.saveTo(savedPath);
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024, // Compress image
+        imageQuality: 80,
+      );
 
-      setState(() {
-        _photoPath = savedPath;
-      });
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _photoBytes = bytes;
+          _photoName = image.name;
+          _photoPath =
+              image.path; // Keep for mobile if needed, but rely on bytes
+        });
+      }
+    } catch (e) {
+      debugPrint('Pick image error: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('选择图片失败，请重试')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+      padding: EdgeInsets.fromLTRB(
+        24,
+        24,
+        24,
+        MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
@@ -424,7 +477,9 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
               Expanded(
                 child: TextField(
                   controller: _weightController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: const InputDecoration(
                     labelText: '体重 (kg)',
                     suffixText: 'kg',
@@ -449,7 +504,9 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.withValues(alpha: 0.5)),
+                      border: Border.all(
+                        color: Colors.grey.withValues(alpha: 0.5),
+                      ),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
@@ -475,20 +532,29 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
                 color: Colors.grey[100],
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
-                image: _photoPath != null
+                image: _photoBytes != null
                     ? DecorationImage(
-                        image: FileImage(File(_photoPath!)),
+                        image: MemoryImage(_photoBytes!),
                         fit: BoxFit.cover,
                       )
                     : null,
               ),
-              child: _photoPath == null
+              child: _photoBytes == null
                   ? Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.add_a_photo, color: kDarkText.withValues(alpha: 0.5), size: 32),
+                        Icon(
+                          Icons.add_a_photo,
+                          color: kDarkText.withValues(alpha: 0.5),
+                          size: 32,
+                        ),
                         const SizedBox(height: 8),
-                        Text('添加照片', style: TextStyle(color: kDarkText.withValues(alpha: 0.5))),
+                        Text(
+                          '添加照片',
+                          style: TextStyle(
+                            color: kDarkText.withValues(alpha: 0.5),
+                          ),
+                        ),
                       ],
                     )
                   : Stack(
@@ -497,14 +563,21 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
                           right: 8,
                           top: 8,
                           child: GestureDetector(
-                            onTap: () => setState(() => _photoPath = null),
+                            onTap: () => setState(() {
+                              _photoBytes = null;
+                              _photoPath = null;
+                            }),
                             child: Container(
                               padding: const EdgeInsets.all(4),
                               decoration: const BoxDecoration(
                                 color: Colors.black54,
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.close, color: Colors.white, size: 16),
+                              child: const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                                size: 16,
+                              ),
                             ),
                           ),
                         ),
@@ -527,9 +600,14 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
               backgroundColor: kPrimaryColor,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
             ),
-            child: const Text('保存', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            child: const Text(
+              '保存',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -539,8 +617,37 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
   Future<void> _save() async {
     final weight = double.tryParse(_weightController.text);
     if (weight == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请输入有效的体重')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入有效的体重')));
       return;
+    }
+
+    // Upload photo if selected
+    String? publicUrl;
+    if (_photoBytes != null && CloudService.isEnabled) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('正在上传图片...')));
+      final fileName =
+          '${DateTime.now().millisecondsSinceEpoch}_${_photoName ?? "photo.jpg"}';
+      // Use 'pet_photos' bucket
+      publicUrl = await CloudService.uploadFile(
+        'pet_photos',
+        'growth/$fileName',
+        _photoBytes!,
+      );
+      if (publicUrl == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('图片上传失败，请检查网络或 Bucket 配置')),
+          );
+        }
+        return; // Stop saving if upload fails (optional)
+      }
+    } else if (_photoPath != null && !CloudService.isEnabled) {
+      // Local only mode (mobile)
+      publicUrl = _photoPath;
     }
 
     final record = GrowthRecord(
@@ -549,7 +656,7 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
       date: _selectedDate,
       weight: weight,
       note: _noteController.text,
-      photoPath: _photoPath,
+      photoPath: publicUrl, // Store URL instead of local path
     );
 
     await StorageService.addGrowthRecord(record);

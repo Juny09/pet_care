@@ -70,6 +70,32 @@ class CloudService {
     _isInitialized = false;
     _client = null;
   }
+  /// 上传文件到 Supabase Storage
+  static Future<String?> uploadFile(
+    String bucketName,
+    String path,
+    Uint8List bytes, {
+    String? contentType,
+  }) async {
+    if (!isEnabled) return null;
+    try {
+      await _client!.storage.from(bucketName).uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: contentType,
+              upsert: true,
+            ),
+          );
+      final publicUrl =
+          _client!.storage.from(bucketName).getPublicUrl(path);
+      return publicUrl;
+    } catch (e) {
+      debugPrint('Upload file error: $e');
+      return null;
+    }
+  }
+
   // --- 家庭/群组与日志功能 ---
 
   /// 获取当前用户邮箱

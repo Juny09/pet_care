@@ -2075,6 +2075,188 @@ class _PetListPageState extends State<PetListPage> {
     );
   }
 
+  // --- 用户信息与家庭共享 ---
+
+  Widget _buildUserInfoCard() {
+    final email = CloudService.currentUserEmail;
+    final initial = email.isNotEmpty ? email[0].toUpperCase() : '?';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: kPrimaryColor.withValues(alpha: 0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 30,
+                backgroundColor: kPrimaryColor.withValues(alpha: 0.2),
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: kPrimaryColor,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '当前登录',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      email,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: kDarkText,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _showFamilyDialog,
+              icon: const Icon(Icons.group_add_rounded),
+              label: const Text('邀请家人一起管理'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kPastelYellow,
+                foregroundColor: kDarkText,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFamilyDialog() {
+    final familyId = CloudService.currentFamilyId;
+    final joinController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('家庭共享'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '让家人扫描或输入以下代码，即可共同管理毛孩子：',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            // 我的 ID
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SelectableText(
+                      familyId,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 20),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: familyId));
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(const SnackBar(content: Text('家庭代码已复制')));
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 32),
+            const Text(
+              '或者加入家人的家庭：',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: joinController,
+              decoration: const InputDecoration(
+                hintText: '输入家人的家庭代码',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final id = joinController.text.trim();
+              if (id.isEmpty) return;
+              try {
+                await CloudService.joinFamily(id);
+                if (mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('已加入家庭！')));
+                  _loadPets(); // 刷新数据
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('加入失败，请重试')));
+                }
+              }
+            },
+            child: const Text('加入'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2086,6 +2268,11 @@ class _PetListPageState extends State<PetListPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // 用户信息卡片
+              if (CloudService.isEnabled &&
+                  Supabase.instance.client.auth.currentUser != null)
+                _buildUserInfoCard(),
+
               Expanded(
                 child: ListView.builder(
                   itemCount: _pets.length,
