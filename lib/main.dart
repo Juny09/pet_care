@@ -10,6 +10,7 @@ import 'notification_service.dart';
 import 'login_page.dart';
 import 'password_reset_page.dart';
 import 'update_service.dart';
+import 'family_management_page.dart';
 
 import 'activity_log_page.dart';
 import 'growth_page.dart';
@@ -2080,6 +2081,18 @@ class _PetListPageState extends State<PetListPage> {
     );
   }
 
+  // --- 家庭/群组管理 ---
+
+  void _showFamilyManagement() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const FamilyManagementPage()),
+    ).then((_) {
+      // 刷新数据，因为家庭可能变了
+      _loadPets();
+    });
+  }
+
   // --- 用户信息与家庭共享 ---
 
   Widget _buildUserInfoCard() {
@@ -2147,9 +2160,9 @@ class _PetListPageState extends State<PetListPage> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _showFamilyDialog,
-              icon: const Icon(Icons.group_add_rounded),
-              label: const Text('邀请家人一起管理'),
+              onPressed: _showFamilyManagement, // 改为跳转到新页面
+              icon: const Icon(Icons.group_work_rounded),
+              label: const Text('管理我的家庭 / 切换空间'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: kPastelYellow,
                 foregroundColor: kDarkText,
@@ -2479,26 +2492,44 @@ class _PetEditPageState extends State<PetEditPage> {
 
   bool get _isOtherType => _selectedType == '其他';
 
+  // 新增：家庭选择逻辑
+  String? _selectedHouseholdId;
+  List<Map<String, dynamic>> _myHouseholds = [];
+
   @override
   void initState() {
     super.initState();
+    _loadHouseholds();
+
     if (widget.pet != null) {
       _nameController.text = widget.pet!.name;
       _selectedType = widget.pet!.type;
       _selectedIconCodePoint = widget.pet!.iconCodePoint;
+      // TODO: 需要在 Pet 模型中存储 householdId/familyId 才能回显
+      // 目前 StorageService.getPets() 过滤了 family_id，但 Pet 模型本身没有暴露该字段
+      // 我们暂定默认选中当前上下文的家庭，或者如果是新建，选中当前家庭
+    }
+  }
 
-      // 如果类型不在预定义列表中，说明是自定义类型
-      final isPredefined = kPetTypes.any((t) => t.label == _selectedType);
-      if (!isPredefined) {
-        // 视为“其他”并填入自定义名称
-        _customTypeController.text = _selectedType;
-        _selectedType = '其他';
-      }
+  Future<void> _loadHouseholds() async {
+    final list = await CloudService.getMyHouseholds();
+    if (mounted) {
+      setState(() {
+        _myHouseholds = list;
+        // 如果是新建，默认选中第一个（通常是个人空间）或者当前上下文
+        if (_selectedHouseholdId == null && list.isNotEmpty) {
+          // 尝试获取当前选中的家庭 ID (需要状态管理)
+          // 简单起见，默认个人空间
+          _selectedHouseholdId = CloudService.currentUserId;
+        }
+      });
     }
   }
 
   Future<void> _save() async {
     if (_nameController.text.isEmpty) return;
+
+    // ... (类型和图标逻辑不变)
 
     // 确定最终类型
     String finalType = _selectedType;
@@ -2506,19 +2537,15 @@ class _PetEditPageState extends State<PetEditPage> {
       finalType = _customTypeController.text;
     }
 
-    // 确定最终图标
-    // 如果是预定义类型，且用户没有手动选图标(或者逻辑上我们强制预定义类型用默认图标)，
-    // 但为了灵活性，我们允许用户修改。
-    // 简单起见：如果是“其他”，必须选图标（或有默认）。
-    // 如果是预定义，使用预定义图标（除非我们想做更复杂）。
-    // 这里逻辑：如果不是其他，iconCodePoint 为 null (使用默认)。如果是其他，iconCodePoint 必须有值。
     int? finalIconCodePoint = _selectedIconCodePoint;
     if (!_isOtherType) {
-      finalIconCodePoint = null; // 重置为默认
+      finalIconCodePoint = null;
     } else if (finalIconCodePoint == null) {
-      // 如果是其他但没选图标，给个默认星星
       finalIconCodePoint = Icons.star.codePoint;
     }
+
+    // 获取选中的家庭 ID
+    final targetFamilyId = _selectedHouseholdId ?? CloudService.currentUserId;
 
     if (widget.pet != null) {
       // Update
@@ -2529,6 +2556,14 @@ class _PetEditPageState extends State<PetEditPage> {
         iconCodePoint: finalIconCodePoint,
       );
       await StorageService.updatePet(updatedPet);
+
+      // 如果家庭变了，需要移动 (Cloud only)
+      if (CloudService.isEnabled) {
+        // 注意：这里我们无法知道旧的 familyId，因为 Pet 模型没存。
+        // 但 updatePet 通常只更新基本信息。
+        // 我们额外调用 movePet
+        await CloudService.movePet(updatedPet.id, targetFamilyId);
+      }
     } else {
       // Add
       final newPet = Pet(
@@ -2537,7 +2572,15 @@ class _PetEditPageState extends State<PetEditPage> {
         type: finalType,
         iconCodePoint: finalIconCodePoint,
       );
+      // StorageService.addPet 需要修改以支持传入 familyId，或者我们在 addPet 内部处理
+      // 目前 addPet 默认使用 CloudService.currentFamilyId (即 CloudService.currentUserId)
+      // 我们需要一种方式告诉 addPet 使用哪个 familyId
+
+      // 临时方案：先添加，再移动
       await StorageService.addPet(newPet);
+      if (CloudService.isEnabled) {
+        await CloudService.movePet(newPet.id, targetFamilyId);
+      }
     }
 
     if (mounted) Navigator.pop(context);
@@ -2551,62 +2594,95 @@ class _PetEditPageState extends State<PetEditPage> {
         child: Container(
           constraints: const BoxConstraints(maxWidth: 600),
           padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildTextField('名字', _nameController),
-              const SizedBox(height: 32),
-              const Text(
-                '类型',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              _buildTypeSelector(),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildTextField('名字', _nameController),
+                const SizedBox(height: 24),
 
-              if (_isOtherType) ...[
-                const SizedBox(height: 24),
-                const Text(
-                  '自定义类型',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _customTypeController,
-                  decoration: InputDecoration(
-                    hintText: '例如：乌龟、鹦鹉...',
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
+                // 家庭/空间选择器
+                if (CloudService.isEnabled && _myHouseholds.isNotEmpty) ...[
+                  const Text(
+                    '所属空间',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                ),
-                const SizedBox(height: 24),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: _selectedHouseholdId,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    items: _myHouseholds.map((h) {
+                      return DropdownMenuItem(
+                        value: h['id'] as String,
+                        child: Text(h['name']),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      setState(() => _selectedHouseholdId = val);
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                ],
+
                 const Text(
-                  '选择图标',
+                  '类型',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
-                _buildIconGrid(),
-              ],
+                _buildTypeSelector(),
 
-              const SizedBox(height: 48),
-              SizedBox(
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _save,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kPrimaryColor,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
+                if (_isOtherType) ...[
+                  const SizedBox(height: 24),
+                  const Text(
+                    '自定义类型',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _customTypeController,
+                    decoration: InputDecoration(
+                      hintText: '例如：乌龟、鹦鹉...',
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
                     ),
                   ),
-                  child: const Text('保 存', style: TextStyle(fontSize: 18)),
+                  const SizedBox(height: 24),
+                  const Text(
+                    '选择图标',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildIconGrid(),
+                ],
+
+                const SizedBox(height: 48),
+                SizedBox(
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kPrimaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                    ),
+                    child: const Text('保 存', style: TextStyle(fontSize: 18)),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

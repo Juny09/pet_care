@@ -12,7 +12,8 @@ class CloudService {
 
   // 用户提供的默认配置
   static const String _defaultUrl = 'https://cgahmjsszehiwrdpfftp.supabase.co';
-  static const String _defaultKey = 'sb_publishable_t0xcgza-0tIY0G0eXwQluA_LAqEaqTw';
+  static const String _defaultKey =
+      'sb_publishable_t0xcgza-0tIY0G0eXwQluA_LAqEaqTw';
 
   static SupabaseClient? _client;
   static bool _isInitialized = false;
@@ -26,11 +27,11 @@ class CloudService {
   /// 初始化
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // 优先使用保存的配置，如果没有则使用默认配置
     String url = prefs.getString(kSupabaseUrlKey) ?? _defaultUrl;
     String key = prefs.getString(kSupabaseAnonKeyKey) ?? _defaultKey;
-    
+
     // 默认开启云端 (如果用户没有显式关闭)
     final useCloud = prefs.getBool(kUseCloudKey) ?? true;
 
@@ -70,6 +71,7 @@ class CloudService {
     _isInitialized = false;
     _client = null;
   }
+
   /// 上传文件到 Supabase Storage
   static Future<String?> uploadFile(
     String bucketName,
@@ -79,16 +81,14 @@ class CloudService {
   }) async {
     if (!isEnabled) return null;
     try {
-      await _client!.storage.from(bucketName).uploadBinary(
+      await _client!.storage
+          .from(bucketName)
+          .uploadBinary(
             path,
             bytes,
-            fileOptions: FileOptions(
-              contentType: contentType,
-              upsert: true,
-            ),
+            fileOptions: FileOptions(contentType: contentType, upsert: true),
           );
-      final publicUrl =
-          _client!.storage.from(bucketName).getPublicUrl(path);
+      final publicUrl = _client!.storage.from(bucketName).getPublicUrl(path);
       return publicUrl;
     } catch (e) {
       debugPrint('Upload file error: $e');
@@ -103,27 +103,164 @@ class CloudService {
     return _client?.auth.currentUser?.email ?? '本地用户';
   }
 
+  /// 获取当前用户的 ID
+  static String get currentUserId {
+    return _client?.auth.currentUser?.id ?? 'local';
+  }
+
+  // 家庭列表缓存
+  static List<Map<String, dynamic>> _myHouseholds = [];
+
+  /// 获取我的家庭列表
+  static Future<List<Map<String, dynamic>>> getMyHouseholds() async {
+    if (!isEnabled) return [];
+    try {
+      // 1. 获取我加入的家庭
+      final response = await _client!
+          .from('household_members')
+          .select('household_id, households(id, name, owner_id), role')
+          .eq('user_id', currentUserId);
+
+      final List<Map<String, dynamic>> households = [];
+
+      // 添加“个人空间” (默认)
+      households.add({
+        'id': currentUserId,
+        'name': '个人空间',
+        'role': 'owner',
+        'is_personal': true,
+      });
+
+      for (var item in response) {
+        if (item['households'] != null) {
+          final h = item['households'];
+          households.add({
+            'id': h['id'],
+            'name': h['name'],
+            'owner_id': h['owner_id'],
+            'role': item['role'],
+            'is_personal': false,
+          });
+        }
+      }
+
+      _myHouseholds = households;
+      return households;
+    } catch (e) {
+      debugPrint('Get households error: $e');
+      return [];
+    }
+  }
+
+  /// 创建新家庭
+  static Future<void> createHousehold(String name) async {
+    if (!isEnabled) return;
+    try {
+      // 1. Insert household
+      final household = await _client!
+          .from('households')
+          .insert({'name': name, 'owner_id': currentUserId})
+          .select()
+          .single();
+
+      // 2. Add self as member (owner)
+      await _client!.from('household_members').insert({
+        'household_id': household['id'],
+        'user_id': currentUserId,
+        'role': 'owner',
+      });
+    } catch (e) {
+      debugPrint('Create household error: $e');
+      rethrow;
+    }
+  }
+
+  /// 获取家庭成员
+  static Future<List<Map<String, dynamic>>> getHouseholdMembers(
+    String householdId,
+  ) async {
+    if (!isEnabled) return [];
+    // 如果是个人空间，只返回自己
+    if (householdId == currentUserId) {
+      return [
+        {'email': currentUserEmail, 'role': 'owner', 'user_id': currentUserId},
+      ];
+    }
+
+    try {
+      // 需要联表查询 users 信息，但 Supabase auth.users 不可直接 public select
+      // 通常做法：创建一个 public_profiles 表同步 auth.users，或者只显示 user_id
+      // 简便做法：我们假设 household_members 表里没有 email。
+      // 为了显示 email，我们可以用 RPC 或者 Edge Function，或者在 household_members 里存一个 email 快照 (不推荐但简单)
+      // 或者：由于这是 MVP，我们只显示 user_id，或者让用户自己备注。
+      // **更优解**：Supabase 允许读取 auth.users 吗？默认不行。
+      // 变通：我们在 household_members 里存一个 `user_email` 字段 (冗余)。
+
+      // 这里先尝试获取，如果只有 id 就显示 id
+      final response = await _client!
+          .from('household_members')
+          .select()
+          .eq('household_id', householdId);
+
+      // 由于无法直接获取 email，我们这里只能返回基本信息
+      // 实际生产中应该有 profiles 表
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('Get members error: $e');
+      return [];
+    }
+  }
+
+  /// 邀请成员 (通过 ID)
+  static Future<void> inviteMember(String householdId, String userId) async {
+    // TODO: 实际上应该通过 Email 邀请，这里简化为直接通过 ID 添加 (如果知道 ID)
+    // 或者创建一个邀请码系统
+    throw UnimplementedError('需要实现邀请逻辑');
+  }
+
+  /// 移除成员
+  static Future<void> removeMember(String householdId, String userId) async {
+    if (!isEnabled) return;
+    await _client!.from('household_members').delete().match({
+      'household_id': householdId,
+      'user_id': userId,
+    });
+  }
+
+  /// 退出家庭
+  static Future<void> leaveHousehold(String householdId) async {
+    await removeMember(householdId, currentUserId);
+  }
+
+  /// 移动宠物到另一个家庭 (修改 family_id)
+  static Future<void> movePet(String petId, String targetFamilyId) async {
+    if (!isEnabled) return;
+    await _client!
+        .from('pets')
+        .update({'family_id': targetFamilyId})
+        .eq('id', petId);
+  }
+
   /// 获取当前用户的 Family ID (这里简单使用 user_id，或者从 user_metadata 获取)
-  /// 为了实现“加入”，我们需要将 family_id 存储在 user_metadata 中
+  /// *已废弃*: 请使用 `currentHouseholdId` 状态管理
   static String get currentFamilyId {
-    if (_client == null) return 'local';
-    final user = _client!.auth.currentUser;
-    if (user == null) return 'local';
-    // 优先从 metadata 获取，如果没有，默认为自己的 ID
-    return user.userMetadata?['family_id'] ?? user.id;
+    // 兼容旧代码，默认返回 user_id (个人空间)
+    // 实际 UI 应该从 Provider/State 获取当前选中的 householdId
+    return currentUserId;
   }
 
   /// 加入家庭 (设置 family_id)
+  /// *已废弃*: 旧逻辑是直接改 metadata，新逻辑是往 household_members 插数据
   static Future<void> joinFamily(String familyId) async {
     if (_client == null) return;
     try {
-      final user = _client!.auth.currentUser;
-      if (user == null) return;
-
-      // 更新 user metadata
-      await _client!.auth.updateUser(
-        UserAttributes(data: {'family_id': familyId}),
-      );
+      // 尝试往 household_members 插入自己
+      // 注意：这需要 RLS 允许 (我们在 HOUSEHOLDS.sql 里允许了)
+      await _client!.from('household_members').insert({
+        'household_id': familyId,
+        'user_id': currentUserId,
+        'role': 'member',
+      });
       debugPrint('Joined family: $familyId');
     } catch (e) {
       debugPrint('Join family error: $e');

@@ -70,10 +70,17 @@ class _LoginPageState extends State<LoginPage> {
       }
     } catch (e) {
       if (mounted) {
+        String msg = '发生错误，请稍后重试';
+        final errStr = e.toString();
+        if (errStr.contains('SocketException') || errStr.contains('Failed host lookup')) {
+          msg = '网络连接失败，请检查：\n1. 手机是否开启流量/WiFi\n2. 尝试关闭WiFi使用流量\n3. 检查是否禁止了App联网权限';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('发生错误，请稍后重试'),
+          SnackBar(
+            content: Text(msg),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(label: '知道了', textColor: Colors.white, onPressed: () {}),
           ),
         );
       }
