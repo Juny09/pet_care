@@ -2218,18 +2218,10 @@ class _PetListPageState extends State<PetListPage> {
       MaterialPageRoute(builder: (context) => const FamilyManagementPage()),
     );
 
-    // 由于 _showFamilyManagement 是在 _PetListPageState 中调用的（被误认为是 _HomePageState）
-    // 而 _currentHouseholdId 是 _HomePageState 的属性
-    // 我们需要通过回调或者 EventBus 来通知父组件
-    // 但在这个简单的应用中，我们可以利用 Navigator.push 的返回值来通知 _HomePageState 刷新
-
-    // 如果这个方法是在 _PetListPageState 里定义的，那么它无法访问 _currentHouseholdId
-    // 我们需要确认 _PetListPageState 是否有 widget.onHouseholdChanged 之类的回调
-    // 看起来代码结构有点乱，_buildUserInfoCard 似乎是在 _PetListPageState 中
-    // 但 _PetListPageState 是 _HomePageState 的子组件吗？
-    // 让我们假设这个方法是在 _PetListPageState 里，我们需要调用 widget.onSwitchHousehold(selectedId)
-
     if (selectedId != null) {
+      // PetListPage 作为一个独立页面，如果被用于家庭管理，
+      // 它应该通知父组件或者自己处理家庭切换
+      // 但这里我们是在 PetListPage 内部，所以我们调用 widget.onSwitchHousehold
       widget.onSwitchHousehold(selectedId);
     }
   }
