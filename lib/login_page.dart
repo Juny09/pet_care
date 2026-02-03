@@ -1,3 +1,4 @@
+import 'dart:io'; // Add dart:io for Socket
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -72,15 +73,21 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) {
         String msg = '发生错误，请稍后重试';
         final errStr = e.toString();
-        if (errStr.contains('SocketException') || errStr.contains('Failed host lookup')) {
-          msg = '网络连接失败，请检查：\n1. 手机是否开启流量/WiFi\n2. 尝试关闭WiFi使用流量\n3. 检查是否禁止了App联网权限';
+        if (errStr.contains('SocketException') ||
+            errStr.contains('Failed host lookup')) {
+          msg =
+              '网络连接失败，请检查：\n1. 手机是否开启流量/WiFi\n2. 尝试关闭WiFi使用流量\n3. 检查是否禁止了App联网权限';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(msg),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
-            action: SnackBarAction(label: '知道了', textColor: Colors.white, onPressed: () {}),
+            action: SnackBarAction(
+              label: '知道了',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
           ),
         );
       }
@@ -197,6 +204,83 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Future<void> _runNetworkDiagnosis() async {
+    setState(() => _isLoading = true);
+    final sb = StringBuffer();
+    sb.writeln('开始网络诊断...');
+
+    try {
+      // 1. Check Public Internet (Baidu/Google)
+      sb.write('1. 连接互联网 (Baidu): ');
+      try {
+        final result = await InternetAddress.lookup('www.baidu.com');
+        if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+          sb.writeln('成功 ✅ (${result[0].address})');
+        } else {
+          sb.writeln('失败 ❌ (DNS解析空)');
+        }
+      } catch (e) {
+        sb.writeln('失败 ❌ ($e)');
+      }
+
+      // 2. Check Supabase
+      sb.write('2. 连接服务器 (Supabase): ');
+      try {
+        // Parse host from URL
+        // Access via internal configuration or hardcoded for diagnosis
+        // SupabaseClient doesn't expose url directly in v2 public API easily without digging,
+        // but we can try to access it via CloudService or just use the known constant.
+        // Assuming CloudService has initialized it.
+        const knownUrl = 'https://cgahmjsszehiwrdpfftp.supabase.co';
+        final uri = Uri.parse(knownUrl);
+        final result = await InternetAddress.lookup(uri.host);
+        if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+          sb.writeln('成功 ✅ (${result[0].address})');
+
+          // Try TCP connect
+          sb.write('   尝试建立连接... ');
+          final socket = await Socket.connect(
+            uri.host,
+            443,
+            timeout: const Duration(seconds: 5),
+          );
+          socket.destroy();
+          sb.writeln('连接成功 ✅');
+        } else {
+          sb.writeln('失败 ❌ (DNS解析空)');
+        }
+      } catch (e) {
+        sb.writeln('失败 ❌ ($e)');
+      }
+    } catch (e) {
+      sb.writeln('诊断过程出错: $e');
+    } finally {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('网络诊断报告'),
+            content: SingleChildScrollView(child: Text(sb.toString())),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('关闭'),
+              ),
+              TextButton(
+                onPressed: () {
+                  // Copy to clipboard (optional)
+                  Navigator.pop(ctx);
+                },
+                child: const Text('好的'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -280,6 +364,21 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                   ),
+                const SizedBox(height: 16),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: _runNetworkDiagnosis,
+                    icon: const Icon(
+                      Icons.network_check,
+                      size: 16,
+                      color: Colors.grey,
+                    ),
+                    label: const Text(
+                      '网络连接测试',
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
