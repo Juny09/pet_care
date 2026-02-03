@@ -100,6 +100,22 @@
     *   填写商店信息 (截图、描述、隐私政策等)。
     *   提交审核 (通常需要 1-3 天)。
 
+### 4. 关于 Android 在线更新 (Online Update)
+
+Android App 想要实现“在线更新”，最正规的方式是通过 **Google Play Store**。
+
+#### 方式 A：Google Play (推荐)
+1.  **上传新版本**：每次有更新时，修改 `pubspec.yaml` 中的 `version` (例如 `1.0.1+2`)，然后构建新的 App Bundle (`.aab`)。
+2.  **发布**：在 Google Play Console 上传新包。
+3.  **用户端**：Google Play 会自动在后台更新用户的 App，或者用户打开 Play Store 时会看到“更新”按钮。
+4.  **内测 (Internal Testing)**：如果你不想公开，可以使用“内部测试”轨道，添加家人的 Gmail 邮箱作为测试员。他们会通过专门的链接下载并接收更新。
+
+#### 方式 B：手动分发 (不推荐给小白)
+如果你不走 Google Play，用户必须手动下载新的 APK 覆盖安装。
+1.  你需要把 APK 文件上传到网盘或服务器 (例如 Vercel/GitHub Releases)。
+2.  用户需要定期去下载新版本。
+3.  (进阶) 你可以在 App 里写代码去检查服务器上的最新版本号，提示用户去下载，但这需要编写额外的代码逻辑。
+
 ---
 
 ## 4. iOS 部署 (需要 Mac 和 Xcode)

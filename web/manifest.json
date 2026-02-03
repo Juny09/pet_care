@@ -3,7 +3,7 @@
     "short_name": "今日萌宠",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#FFFDE7",
+    "background_color": "#FFAB91",
     "theme_color": "#FFAB91",
     "description": "记录毛孩子生活的每一天",
     "orientation": "portrait-primary",

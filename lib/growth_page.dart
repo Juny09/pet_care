@@ -626,11 +626,12 @@ class _AddGrowthRecordSheetState extends State<AddGrowthRecordSheet> {
     // Upload photo if selected
     String? publicUrl;
     if (_photoBytes != null && CloudService.isEnabled) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('正在上传图片...')));
-      final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${_photoName ?? "photo.jpg"}';
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('正在上传图片...')));
+      
+      // Sanitize filename to avoid 400 errors
+      String safeName = (_photoName ?? "photo.jpg").replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$safeName';
+      
       // Use 'pet_photos' bucket
       publicUrl = await CloudService.uploadFile(
         'pet_photos',

@@ -2208,6 +2208,30 @@ class _PetListPageState extends State<PetListPage> {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final Uri emailLaunchUri = Uri(
+                    scheme: 'mailto',
+                    query:
+                        'subject=邀请你加入我的毛孩子家庭&body=请下载“今日萌宠”App，并在“我的毛孩子”页面点击“加入别人的家庭”，输入我的家庭 ID：$familyId',
+                  );
+                  if (await canLaunchUrl(emailLaunchUri)) {
+                    await launchUrl(emailLaunchUri);
+                  } else {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('无法打开邮件客户端')),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.email_outlined),
+                label: const Text('通过邮件发送邀请'),
+              ),
+            ),
             const Divider(height: 32),
             const Text(
               '或者加入家人的家庭：',
