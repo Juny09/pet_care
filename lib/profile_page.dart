@@ -7,6 +7,8 @@ import 'health_page.dart';
 import 'growth_page.dart';
 import 'about_page.dart';
 
+import 'notification_settings_page.dart';
+
 // ---------------------------------------------------------------------------
 // 👤 个人中心页面 (Profile Page)
 // ---------------------------------------------------------------------------
@@ -176,14 +178,16 @@ class _ProfilePageState extends State<ProfilePage> {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.notifications),
-            title: const Text('通知铃声设置'),
+            leading: const Icon(Icons.notifications_outlined),
+            title: const Text('通知设置'),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () {
-              // TODO: 实现通知铃声设置
-              ScaffoldMessenger.of(
+              Navigator.push(
                 context,
-              ).showSnackBar(const SnackBar(content: Text('即将上线：自定义铃声功能')));
+                MaterialPageRoute(
+                  builder: (context) => const NotificationSettingsPage(),
+                ),
+              );
             },
           ),
           ListTile(

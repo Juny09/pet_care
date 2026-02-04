@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart'; // Add this for kIsWeb
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -9,6 +10,9 @@ class UpdateService {
   /// [context] 用于显示对话框
   /// [silent] 如果为 true，且无更新时，不显示提示（用于启动时自动检查）
   static Future<void> checkUpdate(BuildContext context, {bool silent = false}) async {
+    // Web 平台不需要检查更新
+    if (kIsWeb) return;
+
     if (!CloudService.isEnabled) {
       if (!silent) {
         ScaffoldMessenger.of(context).showSnackBar(

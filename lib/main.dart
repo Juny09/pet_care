@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart'; // Add this for kIsWeb
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1005,7 +1006,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isWideScreen = MediaQuery.of(context).size.width > 640;
+    // 强制 Web 使用宽屏布局，或者宽度大于 640
+    final isWideScreen = kIsWeb || MediaQuery.of(context).size.width > 640;
 
     return Scaffold(
       extendBodyBehindAppBar: !isWideScreen,
@@ -1126,6 +1128,197 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildHomeTab() {
+    final isWideScreen = MediaQuery.of(context).size.width > 640;
+
+    if (isWideScreen) {
+      // 宽屏布局：左侧待办，右侧已完成，顶部全宽
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [kPastelCream, Colors.white],
+          ),
+        ),
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      '今日萌宠',
+                      style: TextStyle(
+                        color: kDarkText,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.share, color: kDarkText),
+                      tooltip: '分享今日日报',
+                      onPressed: _shareDailySummary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (CloudService.isEnabled)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                  child: _buildUserInfoCard(),
+                ),
+              ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: _buildSummaryCard(),
+              ),
+            ),
+            SliverToBoxAdapter(child: _buildPetSelector()),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 左栏：未完成
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.checklist_rounded,
+                                  color: kPrimaryColor,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${_currentPet.name} 的待办',
+                                  style: const TextStyle(
+                                    color: kDarkText,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: kPrimaryColor.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '${_todayEvents.where((e) => !e.isDone).length} 待完成',
+                                    style: const TextStyle(
+                                      color: kPrimaryColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_todayEvents.where((e) => !e.isDone).isEmpty)
+                            _buildEmptyState()
+                          else
+                            ..._todayEvents
+                                .where((e) => !e.isDone)
+                                .map(
+                                  (e) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _buildEventCard(e),
+                                  ),
+                                ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 24),
+                    // 右栏：已完成
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Row(
+                              children: [
+                                Text(
+                                  '已完成',
+                                  style: TextStyle(
+                                    color: kDarkText.withValues(alpha: 0.6),
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[200],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '${_todayEvents.where((e) => e.isDone).length}',
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_todayEvents.where((e) => e.isDone).isEmpty)
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(24.0),
+                                child: Text(
+                                  '暂无已完成事项',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              ),
+                            )
+                          else
+                            ..._todayEvents
+                                .where((e) => e.isDone)
+                                .map(
+                                  (e) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _buildEventCard(e),
+                                  ),
+                                ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
+          ],
+        ),
+      );
+    }
+
+    // 移动端/窄屏布局 (保持原样)
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
