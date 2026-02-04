@@ -72,8 +72,6 @@ class NotificationService {
         macOS: DarwinNotificationDetails(sound: iosSound),
       ),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
     );
   }
 

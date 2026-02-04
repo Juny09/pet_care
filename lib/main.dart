@@ -17,6 +17,7 @@ import 'growth_page.dart';
 import 'health_page.dart';
 import 'about_page.dart';
 import 'profile_page.dart'; // Add this import
+import 'records_page.dart';
 import 'models.dart'; // Add this if needed for models like Pet, CareEvent
 import 'event_detail_page.dart'; // Add this import
 
@@ -1088,203 +1089,185 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildHomeTab() {
     return Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [kPastelCream, Colors.white],
-          ),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [kPastelCream, Colors.white],
         ),
-        child: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 800),
-            child: CustomScrollView(
-              slivers: [
-                // AppBar 占位 (因为 extendBodyBehindAppBar)
-                // 如果是多选模式，Scaffold 有 AppBar，这里需要 padding
-                // 如果不是多选模式，我们在这里模拟一个 AppBar 或者直接留白
-                SliverAppBar(
-                  pinned: false,
-                  floating: true,
-                  backgroundColor: Colors.transparent,
-                  elevation: 0,
-                  title: const Text('今日萌宠', style: TextStyle(color: kDarkText, fontWeight: FontWeight.bold)),
-                  actions: [
-                     IconButton(
-                      icon: const Icon(Icons.share, color: kDarkText),
-                      tooltip: '分享今日日报',
-                      onPressed: _shareDailySummary,
-                    ),
-                  ],
+      ),
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: CustomScrollView(
+            slivers: [
+              // AppBar 占位 (因为 extendBodyBehindAppBar)
+              // 如果是多选模式，Scaffold 有 AppBar，这里需要 padding
+              // 如果不是多选模式，我们在这里模拟一个 AppBar 或者直接留白
+              SliverAppBar(
+                pinned: false,
+                floating: true,
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                title: const Text(
+                  '今日萌宠',
+                  style: TextStyle(
+                    color: kDarkText,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                
-                // 0. 用户/家庭信息卡片
-                if (CloudService.isEnabled)
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.share, color: kDarkText),
+                    tooltip: '分享今日日报',
+                    onPressed: _shareDailySummary,
+                  ),
+                ],
+              ),
+
+              // 0. 用户/家庭信息卡片
+              if (CloudService.isEnabled)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: _buildUserInfoCard(),
+                  ),
+                ),
+
+              // 1. 今日概览卡片
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: _buildSummaryCard(),
+                ),
+              ),
+
+              // 2. 宠物选择器
+              SliverToBoxAdapter(child: _buildPetSelector()),
+
+              // 3. 标题
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.checklist_rounded, color: kPrimaryColor),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${_currentPet.name} 的待办',
+                        style: const TextStyle(
+                          color: kDarkText,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: kPrimaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${_todayEvents.where((e) => !e.isDone).length} 待完成',
+                          style: const TextStyle(
+                            color: kPrimaryColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 4. 列表
+              if (_todayEvents.isEmpty)
+                SliverToBoxAdapter(child: _buildEmptyState())
+              else ...[
+                // 待完成事项
+                if (_todayEvents.any((e) => !e.isDone))
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final pendingEvents = _todayEvents
+                          .where((e) => !e.isDone)
+                          .toList();
+                      if (index >= pendingEvents.length) return null;
+                      final event = pendingEvents[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _buildEventCard(event),
+                      );
+                    }, childCount: _todayEvents.where((e) => !e.isDone).length),
+                  ),
+
+                // 已完成事项标题
+                if (_todayEvents.any((e) => e.isDone))
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      child: _buildUserInfoCard(),
-                    ),
-                  ),
-
-                // 1. 今日概览卡片
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: _buildSummaryCard(),
-                  ),
-                ),
-
-                // 2. 宠物选择器
-                SliverToBoxAdapter(child: _buildPetSelector()),
-
-                // 3. 标题
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.checklist_rounded,
-                          color: kPrimaryColor,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${_currentPet.name} 的待办',
-                          style: const TextStyle(
-                            color: kDarkText,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: kPrimaryColor.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '${_todayEvents.where((e) => !e.isDone).length} 待完成',
-                            style: const TextStyle(
-                              color: kPrimaryColor,
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+                      child: Row(
+                        children: [
+                          Text(
+                            '已完成',
+                            style: TextStyle(
+                              color: kDarkText.withValues(alpha: 0.6),
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              fontSize: 12,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // 4. 列表
-                if (_todayEvents.isEmpty)
-                  SliverToBoxAdapter(child: _buildEmptyState())
-                else ...[
-                  // 待完成事项
-                  if (_todayEvents.any((e) => !e.isDone))
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final pendingEvents = _todayEvents
-                              .where((e) => !e.isDone)
-                              .toList();
-                          if (index >= pendingEvents.length) return null;
-                          final event = pendingEvents[index];
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: _buildEventCard(event),
-                          );
-                        },
-                        childCount: _todayEvents.where((e) => !e.isDone).length,
-                      ),
-                    ),
-
-                  // 已完成事项标题
-                  if (_todayEvents.any((e) => e.isDone))
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-                        child: Row(
-                          children: [
-                            Text(
-                              '已完成',
-                              style: TextStyle(
-                                color: kDarkText.withValues(alpha: 0.6),
-                                fontSize: 16,
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_todayEvents.where((e) => e.isDone).length}',
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[200],
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '${_todayEvents.where((e) => e.isDone).length}',
-                                style: const TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
+                  ),
 
-                  // 已完成事项列表
-                  if (_todayEvents.any((e) => e.isDone))
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final doneEvents = _todayEvents
-                              .where((e) => e.isDone)
-                              .toList();
-                          if (index >= doneEvents.length) return null;
-                          final event = doneEvents[index];
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: _buildEventCard(event),
-                          );
-                        },
-                        childCount: _todayEvents.where((e) => e.isDone).length,
-                      ),
-                    ),
-                ],
-
-                const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
+                // 已完成事项列表
+                if (_todayEvents.any((e) => e.isDone))
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final doneEvents = _todayEvents
+                          .where((e) => e.isDone)
+                          .toList();
+                      if (index >= doneEvents.length) return null;
+                      final event = doneEvents[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _buildEventCard(event),
+                      );
+                    }, childCount: _todayEvents.where((e) => e.isDone).length),
+                  ),
               ],
-            ),
+
+              const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
+            ],
           ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          if (_currentPetId.isEmpty) return;
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AddEventPage(petId: _currentPetId),
-            ),
-          );
-          _loadData();
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('记一笔'),
       ),
     );
   }
