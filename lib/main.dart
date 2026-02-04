@@ -1169,16 +1169,84 @@ class _HomePageState extends State<HomePage> {
                 // 4. 列表
                 if (_todayEvents.isEmpty)
                   SliverToBoxAdapter(child: _buildEmptyState())
-                else
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final event = _todayEvents[index];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: _buildEventCard(event),
-                      );
-                    }, childCount: _todayEvents.length),
-                  ),
+                else ...[
+                  // 待完成事项
+                  if (_todayEvents.any((e) => !e.isDone))
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final pendingEvents = _todayEvents
+                              .where((e) => !e.isDone)
+                              .toList();
+                          if (index >= pendingEvents.length) return null;
+                          final event = pendingEvents[index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: _buildEventCard(event),
+                          );
+                        },
+                        childCount: _todayEvents.where((e) => !e.isDone).length,
+                      ),
+                    ),
+
+                  // 已完成事项标题
+                  if (_todayEvents.any((e) => e.isDone))
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+                        child: Row(
+                          children: [
+                            Text(
+                              '已完成',
+                              style: TextStyle(
+                                color: kDarkText.withValues(alpha: 0.6),
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[200],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${_todayEvents.where((e) => e.isDone).length}',
+                                style: const TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                  // 已完成事项列表
+                  if (_todayEvents.any((e) => e.isDone))
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final doneEvents = _todayEvents
+                              .where((e) => e.isDone)
+                              .toList();
+                          if (index >= doneEvents.length) return null;
+                          final event = doneEvents[index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: _buildEventCard(event),
+                          );
+                        },
+                        childCount: _todayEvents.where((e) => e.isDone).length,
+                      ),
+                    ),
+                ],
 
                 const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
               ],
@@ -1783,6 +1851,27 @@ class _HomePageState extends State<HomePage> {
                                   ],
                                 ],
                               ),
+                              if (event.createdBy != null &&
+                                  event.createdBy!.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.person_outline,
+                                      size: 12,
+                                      color: Colors.grey,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '创建者: ${event.createdBy!.split('@').first}', // 简单处理只显示 @ 前的名字
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ],
                           ),
                         ),
