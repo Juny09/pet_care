@@ -1571,7 +1571,10 @@ class _HomePageState extends State<HomePage> {
 
     return Dismissible(
       key: Key(event.id),
-      direction: DismissDirection.endToStart,
+      // 多选模式下禁用滑动删除
+      direction: _isSelectionMode
+          ? DismissDirection.none
+          : DismissDirection.endToStart,
       background: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
@@ -1619,9 +1622,22 @@ class _HomePageState extends State<HomePage> {
       child: GestureDetector(
         onLongPress: () {
           if (!_isSelectionMode) {
+            // 进入多选模式
             setState(() {
               _isSelectionMode = true;
               _selectedEventIds.add(event.id);
+            });
+          } else {
+            // 多选模式下，长按也支持选中/取消选中
+            setState(() {
+              if (_selectedEventIds.contains(event.id)) {
+                _selectedEventIds.remove(event.id);
+                if (_selectedEventIds.isEmpty) {
+                  _isSelectionMode = false;
+                }
+              } else {
+                _selectedEventIds.add(event.id);
+              }
             });
           }
         },
