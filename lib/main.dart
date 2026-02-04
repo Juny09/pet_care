@@ -759,6 +759,10 @@ class _HomePageState extends State<HomePage> {
   List<CareEvent> _todayEvents = [];
   bool _expandCompleted = false; // 控制是否展开已完成事项
 
+  // 多选模式状态
+  bool _isSelectionMode = false;
+  final Set<String> _selectedEventIds = {};
+
   // 新增：家庭/空间切换状态
   // 默认为 CloudService.currentUserId (即个人空间)
   late String _currentHouseholdId;
@@ -990,76 +994,97 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text('今日萌宠'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.share),
-            tooltip: '分享今日日报',
-            onPressed: _shareDailySummary,
-          ),
-          IconButton(
-            icon: const Icon(Icons.medical_services_outlined),
-            tooltip: '健康提醒',
-            onPressed: () {
-              if (_currentPetId.isEmpty) return;
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => HealthPage(pet: _currentPet),
+      appBar: _isSelectionMode
+          ? AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () {
+                  setState(() {
+                    _isSelectionMode = false;
+                    _selectedEventIds.clear();
+                  });
+                },
+              ),
+              title: Text('已选择 ${_selectedEventIds.length} 项'),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  onPressed: _deleteSelectedEvents,
                 ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.monitor_weight_rounded),
-            tooltip: '成长记录',
-            onPressed: () {
-              if (_currentPetId.isEmpty) return;
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => GrowthPage(pet: _currentPet),
+              ],
+            )
+          : AppBar(
+              title: const Text('今日萌宠'),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.share),
+                  tooltip: '分享今日日报',
+                  onPressed: _shareDailySummary,
                 ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: '活动日志',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ActivityLogPage(),
+                IconButton(
+                  icon: const Icon(Icons.medical_services_outlined),
+                  tooltip: '健康提醒',
+                  onPressed: () {
+                    if (_currentPetId.isEmpty) return;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => HealthPage(pet: _currentPet),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.cloud_sync),
-            tooltip: '云端同步设置',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CloudSettingsPage(),
+                IconButton(
+                  icon: const Icon(Icons.monitor_weight_rounded),
+                  tooltip: '成长记录',
+                  onPressed: () {
+                    if (_currentPetId.isEmpty) return;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => GrowthPage(pet: _currentPet),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_rounded),
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AboutPage()),
-              );
-              _loadData();
-            },
-          ),
-        ],
-      ),
+                IconButton(
+                  icon: const Icon(Icons.history),
+                  tooltip: '活动日志',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ActivityLogPage(),
+                      ),
+                    );
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.cloud_sync),
+                  tooltip: '云端同步设置',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const CloudSettingsPage(),
+                      ),
+                    );
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings_rounded),
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AboutPage(),
+                      ),
+                    );
+                    _loadData();
+                  },
+                ),
+              ],
+            ),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -1477,6 +1502,44 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// 批量删除选中的事项
+  Future<void> _deleteSelectedEvents() async {
+    if (_selectedEventIds.isEmpty) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('确认删除 ${_selectedEventIds.length} 项?'),
+        content: const Text('删除后无法恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final eventsToDelete = _todayEvents
+          .where((e) => _selectedEventIds.contains(e.id))
+          .toList();
+
+      for (var event in eventsToDelete) {
+        await _deleteEvent(event);
+      }
+
+      setState(() {
+        _isSelectionMode = false;
+        _selectedEventIds.clear();
+      });
+    }
+  }
+
   /// 删除事项
   Future<void> _deleteEvent(CareEvent event) async {
     // 1. 本地删除
@@ -1554,74 +1617,39 @@ class _HomePageState extends State<HomePage> {
       },
       onDismissed: (direction) => _deleteEvent(event),
       child: GestureDetector(
-        onLongPress: () async {
-          // 长按显示删除菜单
-          final result = await showMenu<String>(
-            context: context,
-            position: RelativeRect.fromLTRB(
-              MediaQuery.of(context).size.width, // Right
-              0, // Top (will be adjusted)
-              0,
-              0,
-            ),
-            items: [
-              const PopupMenuItem(value: 'edit', child: Text('编辑')),
-              const PopupMenuItem(
-                value: 'delete',
-                child: Text('删除', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          );
-          if (result == 'delete') {
-            // Confirm delete
-            if (mounted) {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('确认删除?'),
-                  content: const Text('删除后无法恢复。'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('取消'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text(
-                        '删除',
-                        style: TextStyle(color: Colors.red),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                _deleteEvent(event);
+        onLongPress: () {
+          if (!_isSelectionMode) {
+            setState(() {
+              _isSelectionMode = true;
+              _selectedEventIds.add(event.id);
+            });
+          }
+        },
+        onTap: () async {
+          if (_isSelectionMode) {
+            setState(() {
+              if (_selectedEventIds.contains(event.id)) {
+                _selectedEventIds.remove(event.id);
+                if (_selectedEventIds.isEmpty) {
+                  _isSelectionMode = false;
+                }
+              } else {
+                _selectedEventIds.add(event.id);
               }
-            }
-          } else if (result == 'edit') {
+            });
+          } else {
+            // 点击进入编辑页
             await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) =>
-                    AddEventPage(petId: event.petId, eventToEdit: event),
+                builder: (context) => AddEventPage(
+                  petId: event.petId,
+                  eventToEdit: event, // 传入已有事件进行编辑
+                ),
               ),
             );
             _loadData();
           }
-        },
-        onTap: () async {
-          // 点击进入编辑页
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AddEventPage(
-                petId: event.petId,
-                eventToEdit: event, // 传入已有事件进行编辑
-              ),
-            ),
-          );
-          _loadData();
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
@@ -1662,21 +1690,33 @@ class _HomePageState extends State<HomePage> {
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: [
-                        // Icon
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: isDone
-                                ? Colors.grey[100]
-                                : event.type.color.withValues(alpha: 0.3),
-                            shape: BoxShape.circle,
+                        // Icon or Selection
+                        if (_isSelectionMode)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 16),
+                            child: Icon(
+                              _selectedEventIds.contains(event.id)
+                                  ? Icons.check_circle
+                                  : Icons.radio_button_unchecked,
+                              color: kPrimaryColor,
+                              size: 28,
+                            ),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDone
+                                  ? Colors.grey[100]
+                                  : event.type.color.withValues(alpha: 0.3),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              event.type.icon,
+                              color: isDone ? Colors.grey : kDarkText,
+                              size: 24,
+                            ),
                           ),
-                          child: Icon(
-                            event.type.icon,
-                            color: isDone ? Colors.grey : kDarkText,
-                            size: 24,
-                          ),
-                        ),
                         const SizedBox(width: 16),
                         // Text
                         Expanded(
@@ -1731,19 +1771,20 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                         // Checkbox
-                        Transform.scale(
-                          scale: 1.2,
-                          child: Checkbox(
-                            value: isDone,
-                            activeColor: kPrimaryColor,
-                            shape: const CircleBorder(),
-                            side: BorderSide(
-                              color: Colors.grey[300]!,
-                              width: 2,
+                        if (!_isSelectionMode)
+                          Transform.scale(
+                            scale: 1.2,
+                            child: Checkbox(
+                              value: isDone,
+                              activeColor: kPrimaryColor,
+                              shape: const CircleBorder(),
+                              side: BorderSide(
+                                color: Colors.grey[300]!,
+                                width: 2,
+                              ),
+                              onChanged: (val) => _toggleEvent(event),
                             ),
-                            onChanged: (val) => _toggleEvent(event),
                           ),
-                        ),
                       ],
                     ),
                   ),
