@@ -126,9 +126,26 @@ class UpdateService {
             onPressed: () async {
               if (url.isNotEmpty) {
                 final uri = Uri.parse(url);
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                try {
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  } else {
+                    // Fallback attempt
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('无法打开更新链接: $e')),
+                    );
+                  }
                 }
+              } else {
+                 if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('下载链接为空')),
+                    );
+                  }
               }
             },
             child: const Text('立即更新'),
