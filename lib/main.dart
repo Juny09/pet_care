@@ -13,12 +13,9 @@ import 'update_service.dart';
 import 'family_management_page.dart';
 
 import 'activity_log_page.dart';
-import 'growth_page.dart';
-import 'health_page.dart';
 import 'about_page.dart';
-import 'profile_page.dart'; // Add this import
+import 'profile_page.dart';
 import 'records_page.dart';
-import 'models.dart'; // Add this if needed for models like Pet, CareEvent
 import 'event_detail_page.dart'; // Add this import
 
 // ---------------------------------------------------------------------------
@@ -997,10 +994,21 @@ class _HomePageState extends State<HomePage> {
     ).showSnackBar(const SnackBar(content: Text('日报已复制到剪贴板，快去发给家人吧！')));
   }
 
+  void _onDestinationSelected(int index) {
+    setState(() {
+      _currentIndex = index;
+      // 切换页面时退出多选模式
+      _isSelectionMode = false;
+      _selectedEventIds.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isWideScreen = MediaQuery.of(context).size.width > 640;
+
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      extendBodyBehindAppBar: !isWideScreen,
       // 只有在首页且多选模式下才替换 AppBar
       appBar: (_currentIndex == 0 && _isSelectionMode)
           ? AppBar(
@@ -1022,52 +1030,82 @@ class _HomePageState extends State<HomePage> {
               ],
             )
           : null, // 其他情况由各个 Tab 页自己处理 AppBar 或使用自定义头部
-      body: IndexedStack(
-        index: _currentIndex,
+      body: Row(
         children: [
-          // 0. 首页 (Home)
-          _buildHomeTab(),
-          // 1. 记录 (Records)
-          const RecordsPage(), // 需创建
-          // 2. 活动 (Activity)
-          const ActivityLogPage(),
-          // 3. 我的 (Profile)
-          const ProfilePage(), // 需创建
+          if (isWideScreen)
+            NavigationRail(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: _onDestinationSelected,
+              labelType: NavigationRailLabelType.all,
+              destinations: const [
+                NavigationRailDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: Text('首页'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.folder_outlined),
+                  selectedIcon: Icon(Icons.folder),
+                  label: Text('记录'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.history),
+                  selectedIcon: Icon(Icons.history),
+                  label: Text('活动'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: Text('我的'),
+                ),
+              ],
+            ),
+          if (isWideScreen) const VerticalDivider(thickness: 1, width: 1),
+          Expanded(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: [
+                // 0. 首页 (Home)
+                _buildHomeTab(),
+                // 1. 记录 (Records)
+                const RecordsPage(),
+                // 2. 活动 (Activity)
+                const ActivityLogPage(),
+                // 3. 我的 (Profile)
+                const ProfilePage(),
+              ],
+            ),
+          ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _currentIndex = index;
-            // 切换页面时退出多选模式
-            _isSelectionMode = false;
-            _selectedEventIds.clear();
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: '首页',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder),
-            label: '记录',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.history),
-            selectedIcon: Icon(Icons.history),
-            label: '活动',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: '我的',
-          ),
-        ],
-      ),
+      bottomNavigationBar: isWideScreen
+          ? null
+          : NavigationBar(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: _onDestinationSelected,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: '首页',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.folder_outlined),
+                  selectedIcon: Icon(Icons.folder),
+                  label: '记录',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.history),
+                  selectedIcon: Icon(Icons.history),
+                  label: '活动',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: '我的',
+                ),
+              ],
+            ),
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton.extended(
               onPressed: () async {
