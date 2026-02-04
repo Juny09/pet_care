@@ -39,29 +39,41 @@ class NotificationService {
     required String title,
     required String body,
     required DateTime scheduledTime,
+    String? soundName, // 可选：自定义铃声文件名 (不含扩展名)
   }) async {
     // 如果时间已过，不再提醒
     if (scheduledTime.isBefore(DateTime.now())) return;
+
+    // Android: 自定义声音需要放在 android/app/src/main/res/raw/ 下
+    // 假设 soundName = 'meow'，则文件应为 res/raw/meow.mp3
+    final androidSound = soundName != null
+        ? RawResourceAndroidNotificationSound(soundName)
+        : null;
+
+    // iOS: 自定义声音放在 Resources 下
+    final iosSound = soundName != null ? '$soundName.aiff' : null;
 
     await _notificationsPlugin.zonedSchedule(
       id: id,
       title: title,
       body: body,
       scheduledDate: tz.TZDateTime.from(scheduledTime, tz.local),
-      notificationDetails: const NotificationDetails(
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          'pet_care_channel',
+          soundName != null ? 'pet_care_custom_$soundName' : 'pet_care_channel',
           'Pet Care Reminders',
           channelDescription: 'Reminders for pet care events',
           importance: Importance.max,
           priority: Priority.high,
+          sound: androidSound,
+          playSound: true,
         ),
-        iOS: DarwinNotificationDetails(),
-        macOS: DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(sound: iosSound),
+        macOS: DarwinNotificationDetails(sound: iosSound),
       ),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      // uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-      // Removed due to linter error in v20+
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
     );
   }
 

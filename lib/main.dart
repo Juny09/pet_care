@@ -16,6 +16,9 @@ import 'activity_log_page.dart';
 import 'growth_page.dart';
 import 'health_page.dart';
 import 'about_page.dart';
+import 'profile_page.dart'; // Add this import
+import 'models.dart'; // Add this if needed for models like Pet, CareEvent
+import 'event_detail_page.dart'; // Add this import
 
 // ---------------------------------------------------------------------------
 // 🎨 配色方案 (Color Palette)
@@ -763,6 +766,9 @@ class _HomePageState extends State<HomePage> {
   bool _isSelectionMode = false;
   final Set<String> _selectedEventIds = {};
 
+  // 底部导航状态
+  int _currentIndex = 0;
+
   // 新增：家庭/空间切换状态
   // 默认为 CloudService.currentUserId (即个人空间)
   late String _currentHouseholdId;
@@ -994,7 +1000,8 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: _isSelectionMode
+      // 只有在首页且多选模式下才替换 AppBar
+      appBar: (_currentIndex == 0 && _isSelectionMode)
           ? AppBar(
               leading: IconButton(
                 icon: const Icon(Icons.close),
@@ -1013,79 +1020,74 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             )
-          : AppBar(
-              title: const Text('今日萌宠'),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.share),
-                  tooltip: '分享今日日报',
-                  onPressed: _shareDailySummary,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.medical_services_outlined),
-                  tooltip: '健康提醒',
-                  onPressed: () {
-                    if (_currentPetId.isEmpty) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => HealthPage(pet: _currentPet),
-                      ),
-                    );
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.monitor_weight_rounded),
-                  tooltip: '成长记录',
-                  onPressed: () {
-                    if (_currentPetId.isEmpty) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => GrowthPage(pet: _currentPet),
-                      ),
-                    );
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.history),
-                  tooltip: '活动日志',
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const ActivityLogPage(),
-                      ),
-                    );
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.cloud_sync),
-                  tooltip: '云端同步设置',
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const CloudSettingsPage(),
-                      ),
-                    );
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.settings_rounded),
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const AboutPage(),
-                      ),
-                    );
-                    _loadData();
-                  },
-                ),
-              ],
-            ),
-      body: Container(
+          : null, // 其他情况由各个 Tab 页自己处理 AppBar 或使用自定义头部
+      body: IndexedStack(
+        index: _currentIndex,
+        children: [
+          // 0. 首页 (Home)
+          _buildHomeTab(),
+          // 1. 记录 (Records)
+          const RecordsPage(), // 需创建
+          // 2. 活动 (Activity)
+          const ActivityLogPage(),
+          // 3. 我的 (Profile)
+          const ProfilePage(), // 需创建
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (index) {
+          setState(() {
+            _currentIndex = index;
+            // 切换页面时退出多选模式
+            _isSelectionMode = false;
+            _selectedEventIds.clear();
+          });
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: '首页',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.folder_outlined),
+            selectedIcon: Icon(Icons.folder),
+            label: '记录',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history),
+            selectedIcon: Icon(Icons.history),
+            label: '活动',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: '我的',
+          ),
+        ],
+      ),
+      floatingActionButton: _currentIndex == 0
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                if (_currentPetId.isEmpty) return;
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AddEventPage(petId: _currentPetId),
+                  ),
+                );
+                _loadData();
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('记一笔'),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildHomeTab() {
+    return Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -1098,8 +1100,24 @@ class _HomePageState extends State<HomePage> {
             constraints: const BoxConstraints(maxWidth: 800),
             child: CustomScrollView(
               slivers: [
-                const SliverToBoxAdapter(child: SizedBox(height: 110)),
-
+                // AppBar 占位 (因为 extendBodyBehindAppBar)
+                // 如果是多选模式，Scaffold 有 AppBar，这里需要 padding
+                // 如果不是多选模式，我们在这里模拟一个 AppBar 或者直接留白
+                SliverAppBar(
+                  pinned: false,
+                  floating: true,
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  title: const Text('今日萌宠', style: TextStyle(color: kDarkText, fontWeight: FontWeight.bold)),
+                  actions: [
+                     IconButton(
+                      icon: const Icon(Icons.share, color: kDarkText),
+                      tooltip: '分享今日日报',
+                      onPressed: _shareDailySummary,
+                    ),
+                  ],
+                ),
+                
                 // 0. 用户/家庭信息卡片
                 if (CloudService.isEnabled)
                   SliverToBoxAdapter(
@@ -1722,13 +1740,15 @@ class _HomePageState extends State<HomePage> {
               }
             });
           } else {
-            // 点击进入编辑页
+            // 点击进入详情页 (包含留言功能)
             await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => AddEventPage(
-                  petId: event.petId,
-                  eventToEdit: event, // 传入已有事件进行编辑
+                builder: (context) => EventDetailPage(
+                  event: event,
+                  onEventUpdated: (updatedEvent) {
+                    _loadData();
+                  },
                 ),
               ),
             );
